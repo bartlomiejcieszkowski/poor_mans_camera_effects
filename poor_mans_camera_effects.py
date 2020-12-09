@@ -2,6 +2,8 @@
 
 import numpy
 import cv2
+import getopt
+import sys
 
 """
 1. main
@@ -9,6 +11,15 @@ import cv2
    a) list available cams - allow choosing cam that we will be using
 3. passthrough cam to fakecam
 """
+
+def available_camera(idx):
+    capture = cv2.VideoCapture(idx)
+    if not capture.isOpened():
+        return False
+    read, img = capture.read()
+    capture.release()
+    return read
+
 
 def get_available_cameras():
     idx = 0
@@ -30,12 +41,49 @@ def get_available_cameras():
         idx += 1
     return cameras
 
+shortopts = "lvc:"
+longopts = ['list', 'ls', 'verbose', 'capture=']
+verbose = False
+capture_idx = 0
 
+def usage():
+    print("shortopts: {}".format(shortopts))
+    print("longopts: {}".format(longopts))
 
 def main():
-    cameras = get_available_cameras()
-    print(cameras)
-    pass
+
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], shortopts, longopts)
+    except getopt.GetoptError as err:
+        print(err)
+        usage()
+        sys.exit(2)
+
+    for o, a in opts:
+        if o in ('-l', '--list', '--ls'):
+            cameras = get_available_cameras()
+            print(cameras)
+            return 0
+        elif o in ('-v', '--verbose'):
+            global verbose
+            verbose = True
+        elif o in ('-c', '--capture'):
+            global capture_idx
+            try:
+                capture_idx = int(a)
+            except:
+                print("{} - is not a valid index")
+                return -1
+        else:
+            assert False, 'unhandled option'
+
+    # check if this is right
+    if not available_camera(capture_idx):
+        print("Camera[{}] is unavailable".format(capture_idx))
+        return -2
+
+    return 0
+
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
