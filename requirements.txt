@@ -1,3 +1,4 @@
 opencv-contrib-python
 numpy==1.19.3
+pyvirtualcam
 pyfakewebcam

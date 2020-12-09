@@ -4,6 +4,28 @@ import numpy
 import cv2
 import getopt
 import sys
+import os
+
+if os.name == 'nt':
+    import pyvirtualcam
+
+    def get_virtual_camera(width, height, fps):
+        return pyvirtualcam.Camera(width, height, fps)
+else:
+    import pyfakewebcam
+    # modprobe v4l2loopback devices=2 # will create two fake webcam devices
+    def get_virtual_camera(width, height, fps):
+        # naive search
+        LIMIT = 10
+        idx = 0
+        while idx < LIMIT:
+            try:
+                camera =  pyfakewebcam.FakeWebcam('/dev/video{}'.format(idx), width, height)
+                return camera
+            except:
+                pass
+            idx += 1
+        return None
 
 """
 1. main
@@ -57,7 +79,7 @@ def main():
     except getopt.GetoptError as err:
         print(err)
         usage()
-        sys.exit(2)
+        return 2
 
     for o, a in opts:
         if o in ('-l', '--list', '--ls'):
@@ -81,6 +103,8 @@ def main():
     if not available_camera(capture_idx):
         print("Camera[{}] is unavailable".format(capture_idx))
         return -2
+
+
 
     return 0
 
