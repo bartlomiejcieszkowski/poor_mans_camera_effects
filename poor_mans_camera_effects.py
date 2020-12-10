@@ -138,45 +138,65 @@ def main():
     print("{} x {} @ {}fps".format(camera_width, camera_height, camera_fps))
 
     # check if we get this fps
+
     virtual_camera_fps = camera_fps // 2
     virtual_camera = get_virtual_camera(camera_width, camera_height, virtual_camera_fps)
-    TEST_SECONDS = 5
-    test_frames = TEST_SECONDS * virtual_camera_fps
-    while test_frames > 0:
-        read, frame = camera.read()
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        rgba_frame = np.zeros((camera_height, camera_width, 4), np.uint8)
-        rgba_frame[:, :, :3] = rgb_frame
-        rgba_frame[:, :, 3] = 255
-        virtual_camera.send(rgba_frame)
-        virtual_camera.sleep_until_next_frame()
-        test_frames -= 1
-    fps = virtual_camera.current_fps
-    print(fps)
-    if (virtual_camera_fps - 5) > fps:
-        virtual_camera_fps = virtual_camera_fps // 2
-        virtual_camera.close()
-        virtual_camera = None
 
-        virtual_camera = get_virtual_camera(camera_width, camera_height, virtual_camera_fps)
-
-    print("settling on {}fps".format(virtual_camera_fps))
+    # TEST_SECONDS = 5
+    # test_frames = TEST_SECONDS * virtual_camera_fps
+    # while test_frames > 0:
+    #     read, frame = camera.read()
+    #     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    #     rgba_frame = np.zeros((camera_height, camera_width, 4), np.uint8)
+    #     rgba_frame[:, :, :3] = rgb_frame
+    #     rgba_frame[:, :, 3] = 255
+    #     virtual_camera.send(rgba_frame)
+    #     virtual_camera.sleep_until_next_frame()
+    #     test_frames -= 1
+    # fps = virtual_camera.current_fps
+    # print(fps)
+    # if (virtual_camera_fps - 5) > fps:
+    #     virtual_camera_fps = virtual_camera_fps // 2
+    #     virtual_camera.close()
+    #     virtual_camera = None
+    #
+    #     virtual_camera = get_virtual_camera(camera_width, camera_height, virtual_camera_fps)
+    #
+    # print("settling on {}fps".format(virtual_camera_fps))
 
     rgba_frame = np.zeros((camera_height, camera_width, 4), np.uint8)
     faces = []
     frame_idx = 0
+
+    scale_percent = 25
+    scale_up = scale_percent / 100
+
     while True:
         read, frame = camera.read()
         if facedetect and frame_idx % (virtual_camera_fps * 5) == 0:
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            # gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+            detect_width = int(frame.shape[1] * scale_percent / 100)
+            detect_height = int(frame.shape[0] * scale_percent / 100)
+            dim = (detect_width, detect_height)
+            frame_small = cv2.resize(frame, dim, interpolation = cv2.INTER_AREA)
+            gray = cv2.cvtColor(frame_small, cv2.COLOR_BGR2GRAY)
             faces = face_cascade.detectMultiScale(gray, 1.1, 4)
             if verbose:
                 for (x, y, w, h) in faces:
-                    print("[{}] {},{} {},{}", frame_idx, x, y, x+w, y+h)
+                    print("[{}] {},{} {},{} @ {}x{}".format(frame_idx, x, y, (x + w),
+                          (y + h), detect_width, detect_height))
+                    print("[{}] {},{} {},{} @ {}x{}".format(frame_idx, x * 100 // scale_percent,
+                                                            y * 100 // scale_percent, (x + w) * 100 // scale_percent,
+                                                            (y + h) * 100 // scale_percent, frame.shape[1], frame.shape[0]))
+
 
         for (x, y, w, h) in faces:
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 0, 255), 2)
-
+            x_scaled = (x * 100) // scale_percent
+            y_scaled = (y * 100) // scale_percent
+            xw_scaled = ((x+w) * 100) // scale_percent
+            yh_scaled = ((y+h) * 100) // scale_percent
+            cv2.rectangle(frame, (x_scaled, y_scaled), (xw_scaled, yh_scaled), (0, 0, 255), 2)
 
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
