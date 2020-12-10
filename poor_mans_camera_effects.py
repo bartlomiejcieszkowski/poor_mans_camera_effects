@@ -6,6 +6,8 @@ import getopt
 import sys
 import os
 import numpy as np
+import pathlib
+import threading
 
 if os.name == 'nt':
     import pyvirtualcam
@@ -70,10 +72,36 @@ def get_available_cameras():
         idx += 1
     return cameras
 
+def get_facedectors(path):
+    facedectors = []
+    for path in pathlib.Path(path).rglob('*face*.xml'):
+        facedectors.append(path.as_posix())
+        print(path.as_posix())
+    return facedectors
+
+
+def input_loop():
+    print("Input thread started")
+    while True:
+        text = input()
+        if text == 'n':
+            global facedetectors_idx
+            global face_cascade
+            facedetectors_idx = (facedetectors_idx + 1) % len(facedetectors)
+            face_cascade = cv2.CascadeClassifier(facedetectors[facedetectors_idx])
+            print("New classifier: {}".format(facedetectors[facedetectors_idx]))
+
+
+
+
 shortopts = "lvc:"
-longopts = ['list', 'ls', 'verbose', 'capture=', 'hq', 'facedetect']
+longopts = ['list', 'ls', 'verbose', 'capture=', 'hq', 'facedetect', 'classifier_path=']
 verbose = False
 capture_idx = 0
+facedetectors = []
+facedetectors_idx = 0
+facedetect = False
+face_cascade = None
 
 def usage():
     print("shortopts: {}".format(shortopts))
@@ -82,7 +110,7 @@ def usage():
 def main():
     ls_mode = False
     force_hq = False
-    facedetect = False
+    classifier_path = os.getcwd()
 
     try:
         opts, args = getopt.getopt(sys.argv[1:], shortopts, longopts)
@@ -107,7 +135,10 @@ def main():
         elif o in ('--hq'):
             force_hq = True
         elif o in ('--facedetect'):
+            global facedetect
             facedetect = True
+        elif o in('--classifier_path'):
+            classifier_path = a
         else:
             assert False, 'unhandled option'
 
@@ -117,7 +148,17 @@ def main():
         return 0
 
     if facedetect:
-        face_cascade = cv2.CascadeClassifier('opencv/data/haarcascade_frontalface_default.xml')
+        global facedetectors
+        global facedetectors_idx
+        facedetectors = get_facedectors(classifier_path)
+        facedetectors_idx = 0
+
+        if len(facedetectors) == 0:
+            print("no facedectors found")
+            return -1;
+
+        global face_cascade
+        face_cascade = cv2.CascadeClassifier(facedetectors[facedetectors_idx])
 
     # check if this is right
     camera = get_camera(capture_idx)
@@ -170,6 +211,9 @@ def main():
 
     scale_percent = 25
     scale_up = scale_percent / 100
+
+    input_thread = threading.Thread(target=input_loop)
+    input_thread.start()
 
     while True:
         read, frame = camera.read()
