@@ -31,6 +31,16 @@ else:
             idx += 1
         return None
 
+shortopts = "lvc:"
+longopts = ['list', 'ls', 'verbose', 'capture=', 'hq', 'facedetect', 'classifier_path=']
+verbose = False
+capture_idx = 0
+cascade_classifiers_paths = []
+facedetectors_idx = 0
+facedetect = False
+cascade_classifiers = None
+
+
 """
 1. main
 2. pars args
@@ -73,24 +83,44 @@ def get_available_cameras():
         idx += 1
     return cameras
 
-def get_facedectors(path):
-    facedectors = []
-    for path in pathlib.Path(path).rglob('*face*.xml'):
-        facedectors.append(path.as_posix())
+def get_detectors(path, pattern):
+    detectors = []
+    for path in pathlib.Path(path).rglob(pattern):
+        detectors.append(path.as_posix())
         print(path.as_posix())
-    return facedectors
+    return detectors
 
 
 def input_loop():
     print("Input thread started")
+    global cascade_classifiers
     while True:
         text = input()
-        if text == 'n':
-            global facedetectors_idx
-            global face_cascade
-            facedetectors_idx = (facedetectors_idx + 1) % len(facedetectors)
-            face_cascade = cv2.CascadeClassifier(facedetectors[facedetectors_idx])
-            print("New classifier: {}".format(facedetectors[facedetectors_idx]))
+        if text == 'f':
+            name = 'frontalface'
+            classifier_paths = cascade_classifiers_paths[name]
+            new_idx = (classifier_paths[0] + 1) % len(classifier_paths[1])
+            print("New classifier: {}".format(cascade_classifiers_paths[facedetectors_idx]))
+            cascade_classifiers[name] = cv2.CascadeClassifier(classifier_paths[new_idx])
+            classifier_paths[0] = new_idx
+            cascade_classifiers_paths[name] = classifier_paths
+        elif text == 'g':
+            name = 'profileface'
+            classifier_paths = cascade_classifiers_paths[name]
+            new_idx = (classifier_paths[0] + 1) % len(classifier_paths[1])
+            print("New classifier: {}".format(cascade_classifiers_paths[facedetectors_idx]))
+            cascade_classifiers[name] = cv2.CascadeClassifier(classifier_paths[new_idx])
+            classifier_paths[0] = new_idx
+            cascade_classifiers_paths[name] = classifier_paths
+        if text == 'h':
+            name = 'smile'
+            classifier_paths = cascade_classifiers_paths[name]
+            new_idx = (classifier_paths[0] + 1) % len(classifier_paths[1])
+            print("New classifier: {}".format(cascade_classifiers_paths[facedetectors_idx]))
+            cascade_classifiers[name] = cv2.CascadeClassifier(classifier_paths[new_idx])
+            classifier_paths[0] = new_idx
+            cascade_classifiers_paths[name] = classifier_paths
+
 
 def face_detect_fun(face_queue, bounding_boxes, scale_percent):
     print("Scale {}%".format(scale_percent))
@@ -102,7 +132,7 @@ def face_detect_fun(face_queue, bounding_boxes, scale_percent):
         dim = (detect_width, detect_height)
         frame_small = cv2.resize(frame, dim, interpolation=cv2.INTER_AREA)
         gray = cv2.cvtColor(frame_small, cv2.COLOR_BGR2GRAY)
-        scaled_detections = face_cascade.detectMultiScale(gray, 1.1, 4)
+        scaled_detections = cascade_classifiers['frontalface'].detectMultiScale(gray, 1.1, 4)
         if len(scaled_detections):
             detections = []
             for (x, y, w, h) in scaled_detections:
@@ -114,16 +144,6 @@ def face_detect_fun(face_queue, bounding_boxes, scale_percent):
 
 
 
-shortopts = "lvc:"
-longopts = ['list', 'ls', 'verbose', 'capture=', 'hq', 'facedetect', 'classifier_path=']
-verbose = False
-capture_idx = 0
-facedetectors = []
-facedetectors_idx = 0
-facedetect = False
-face_cascade = None
-
-_sentinel = object()
 
 def usage():
     print("shortopts: {}".format(shortopts))
@@ -170,17 +190,30 @@ def main():
         return 0
 
     if facedetect:
-        global facedetectors
-        global facedetectors_idx
-        facedetectors = get_facedectors(classifier_path)
-        facedetectors_idx = 0
+        global cascade_classifiers_paths
+        global cascade_classifiers
 
-        if len(facedetectors) == 0:
-            print("no facedectors found")
-            return -1;
+        '*face*.xml'
+        cascade_classifiers_paths = dict()
+        cascade_classifiers_paths['frontalface'] = [0, get_detectors(classifier_path, '*frontalface*.xml')]
+        cascade_classifiers_paths['profileface'] = [0, get_detectors(classifier_path, '*profileface*.xml')]
+        cascade_classifiers_paths['smile'] = [0, get_detectors(classifier_path, '*smile*.xml')]
 
-        global face_cascade
-        face_cascade = cv2.CascadeClassifier(facedetectors[facedetectors_idx])
+        cascade_classifiers = dict()
+        if len(cascade_classifiers_paths['frontalface'][1]) == 0:
+            cascade_classifiers['frontalface'] = None
+        else:
+            cascade_classifiers['frontalface'] = cv2.CascadeClassifier(cascade_classifiers_paths['frontalface'][1][facedetectors_idx])
+
+        if len(cascade_classifiers_paths['profileface'][1]) == 0:
+            cascade_classifiers['profileface'] = None
+        else:
+            cascade_classifiers['profileface'] = cv2.CascadeClassifier(cascade_classifiers_paths['profileface'][1][facedetectors_idx])
+
+        if len(cascade_classifiers_paths['smile'][1]) == 0:
+            cascade_classifiers['smile'] = None
+        else:
+            cascade_classifiers['smile'] = cv2.CascadeClassifier(cascade_classifiers_paths['profileface'][1][facedetectors_idx])
 
     # check if this is right
     camera = get_camera(capture_idx)
