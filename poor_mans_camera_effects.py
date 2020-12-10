@@ -8,6 +8,7 @@ import os
 import numpy as np
 import pathlib
 import threading
+import queue
 
 if os.name == 'nt':
     import pyvirtualcam
@@ -91,6 +92,25 @@ def input_loop():
             face_cascade = cv2.CascadeClassifier(facedetectors[facedetectors_idx])
             print("New classifier: {}".format(facedetectors[facedetectors_idx]))
 
+def face_detect_fun(face_queue, bounding_boxes, scale_percent):
+    print("Scale {}%".format(scale_percent))
+    while True:
+        frame = face_queue.get()
+        print('New frame')
+        detect_width = int(frame.shape[1] * scale_percent / 100)
+        detect_height = int(frame.shape[0] * scale_percent / 100)
+        dim = (detect_width, detect_height)
+        frame_small = cv2.resize(frame, dim, interpolation=cv2.INTER_AREA)
+        gray = cv2.cvtColor(frame_small, cv2.COLOR_BGR2GRAY)
+        scaled_detections = face_cascade.detectMultiScale(gray, 1.1, 4)
+        if len(scaled_detections):
+            detections = []
+            for (x, y, w, h) in scaled_detections:
+                detections.append((x * 100 // scale_percent, y * 100 // scale_percent, w * 100 // scale_percent, h * 100 // scale_percent))
+            bounding_boxes[:] = detections
+            if verbose:
+                for (x, y, w, h) in bounding_boxes:
+                    print("{}x{} {}x{} @ {}x{}".format(x, y, (x + w), (y + h), frame.shape[1], frame.shape[0]))
 
 
 
@@ -102,6 +122,8 @@ facedetectors = []
 facedetectors_idx = 0
 facedetect = False
 face_cascade = None
+
+_sentinel = object()
 
 def usage():
     print("shortopts: {}".format(shortopts))
@@ -206,41 +228,34 @@ def main():
     # print("settling on {}fps".format(virtual_camera_fps))
 
     rgba_frame = np.zeros((camera_height, camera_width, 4), np.uint8)
-    faces = []
+    bounding_boxes = []
     frame_idx = 0
 
     scale_percent = 25
-    scale_up = scale_percent / 100
 
-    input_thread = threading.Thread(target=input_loop)
-    input_thread.start()
+    face_queue = queue.Queue()
+
+
+    threads = []
+
+    threads.append(threading.Thread(target=input_loop, name="Input"))
+    if facedetect:
+        threads.append(threading.Thread(target=face_detect_fun, args=(face_queue, bounding_boxes, scale_percent), name="Facedetect"))
+        threads[-1].setDaemon(True)
+
+    for thread in threads:
+        print("Starting thread: \"{}\"".format(thread.getName()))
+
+        thread.start()
 
     while True:
         read, frame = camera.read()
         if facedetect and frame_idx % (virtual_camera_fps * 5) == 0:
             # gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            face_queue.put(frame)
 
-            detect_width = int(frame.shape[1] * scale_percent / 100)
-            detect_height = int(frame.shape[0] * scale_percent / 100)
-            dim = (detect_width, detect_height)
-            frame_small = cv2.resize(frame, dim, interpolation = cv2.INTER_AREA)
-            gray = cv2.cvtColor(frame_small, cv2.COLOR_BGR2GRAY)
-            faces = face_cascade.detectMultiScale(gray, 1.1, 4)
-            if verbose:
-                for (x, y, w, h) in faces:
-                    print("[{}] {},{} {},{} @ {}x{}".format(frame_idx, x, y, (x + w),
-                          (y + h), detect_width, detect_height))
-                    print("[{}] {},{} {},{} @ {}x{}".format(frame_idx, x * 100 // scale_percent,
-                                                            y * 100 // scale_percent, (x + w) * 100 // scale_percent,
-                                                            (y + h) * 100 // scale_percent, frame.shape[1], frame.shape[0]))
-
-
-        for (x, y, w, h) in faces:
-            x_scaled = (x * 100) // scale_percent
-            y_scaled = (y * 100) // scale_percent
-            xw_scaled = ((x+w) * 100) // scale_percent
-            yh_scaled = ((y+h) * 100) // scale_percent
-            cv2.rectangle(frame, (x_scaled, y_scaled), (xw_scaled, yh_scaled), (0, 0, 255), 2)
+        for (x, y, w, h) in bounding_boxes:
+            cv2.rectangle(frame, (x, y), ((x+w), (y+h)), (0, 0, 255), 2)
 
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
