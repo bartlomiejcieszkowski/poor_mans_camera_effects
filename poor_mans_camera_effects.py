@@ -39,6 +39,7 @@ cascade_classifiers_paths = []
 facedetectors_idx = 0
 facedetect = False
 cascade_classifiers = None
+follow_face = True
 
 
 """
@@ -112,7 +113,7 @@ def input_loop():
             cascade_classifiers[name] = cv2.CascadeClassifier(classifier_paths[new_idx])
             classifier_paths[0] = new_idx
             cascade_classifiers_paths[name] = classifier_paths
-        if text == 'h':
+        elif text == 'h':
             name = 'smile'
             classifier_paths = cascade_classifiers_paths[name]
             new_idx = (classifier_paths[0] + 1) % len(classifier_paths[1])
@@ -120,6 +121,10 @@ def input_loop():
             cascade_classifiers[name] = cv2.CascadeClassifier(classifier_paths[new_idx])
             classifier_paths[0] = new_idx
             cascade_classifiers_paths[name] = classifier_paths
+        elif text == 't':
+            global follow_face
+            follow_face = not follow_face
+
 
 
 def face_detect_fun(face_queue, bounding_boxes, scale_percent):
@@ -305,8 +310,10 @@ def main():
 
         for (x, y, w, h, name) in bounding_boxes:
             cv2.rectangle(frame, (x, y), ((x+w), (y+h)), color_map[name], 2)
+            cv2.putText(frame, name, (x, y+h-10), cv2.FONT_HERSHEY_SIMPLEX, 3, color_map[name], 3, cv2.LINE_AA)
 
-        # now to follow face
+        #if follow_face and len(bounding_boxes):
+        #    frame
 
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
