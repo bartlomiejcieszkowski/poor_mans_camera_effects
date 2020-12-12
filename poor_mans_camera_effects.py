@@ -9,6 +9,7 @@ import numpy as np
 import pathlib
 import threading
 import queue
+import time
 
 if os.name == 'nt':
     import pyvirtualcam
@@ -49,6 +50,13 @@ interval_s = 5
    a) list available cams - allow choosing cam that we will be using
 3. passthrough cam to fakecam
 """
+
+boxes = []
+confidences = []
+calssIDs = []
+g_confidence = 0.8
+LABELS = []
+
 
 def get_camera(idx):
     capture = cv2.VideoCapture(idx)
@@ -148,6 +156,39 @@ def input_loop():
             print("interval: {}s".format(interval_s))
 
 
+def yolo_detect(face_queue, bounding_boxes):
+    print("Loading YOLO")
+    net = cv2.dnn.readNetFromDarknet("./yolo/yolov3.cfg", "./yolo/yolov3.weights")
+
+    ln = net.getLayerNames()
+    ln = [ln[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+
+    while True:
+        frame, frame_idx = face_queue.get()
+        (H, W) = frame.shape[:2]
+
+        blob = cv2.dnn.blobFromImage(frame, 1 / 255.0, (416, 416), swapRB=True, crop=False)
+        net.setInput(blob)
+        start = time.time()
+        layerOutputs = net.forward(ln)
+        end = time.time()
+        print("[{}] YOLO processing took {:.6f} seconds".format(end, end - start))
+        detections = []
+        for output in layerOutputs:
+            for detection in output:
+                scores = detection[5:]
+                classID = np.argmax(scores)
+                confidence = scores[classID]
+
+                if confidence > g_confidence:
+                    box = detection[0:4] * np.array([W, H, W, H])
+                    (centerX, centerY, width, height) = box.astype("int")
+
+                    x = int(centerX - (width / 2))
+                    y = int(centerY - (height / 2))
+                    detections.append((x, y, int(width), int(height), classID, confidence))
+        if len(detections):
+            bounding_boxes[:] = detections
 
 
 def face_detect_fun(face_queue, bounding_boxes, scale_percent):
@@ -279,6 +320,10 @@ def main():
         # else:
         #     cascade_classifiers['smile'] = cv2.CascadeClassifier(cascade_classifiers_paths['profileface'][1][facedetectors_idx])
 
+    global LABELS
+    LABELS = open(os.path.join('./yolo', 'coco.names')).read().strip().split("\n")
+    COLORS = np.random.randint(0, 255, size=(len(LABELS), 3), dtype="uint8")
+
     # check if this is right
     camera = get_camera(capture_idx)
     if camera is None:
@@ -341,8 +386,13 @@ def main():
     threads = []
 
     threads.append(threading.Thread(target=input_loop, name="Input"))
-    if facedetect:
-        threads.append(threading.Thread(target=face_detect_fun, args=(face_queue, bounding_boxes, scale_percent), name="Facedetect"))
+    # if facedetect:
+    #     threads.append(threading.Thread(target=face_detect_fun, args=(face_queue, bounding_boxes, scale_percent), name="Facedetect"))
+    #     threads[-1].setDaemon(True)
+
+    use_yolo = True
+    if use_yolo:
+        threads.append(threading.Thread(target=yolo_detect, args=(face_queue, bounding_boxes), name="YOLO"))
         threads[-1].setDaemon(True)
 
     for thread in threads:
@@ -356,9 +406,10 @@ def main():
             # gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             face_queue.put((frame, frame_idx))
 
-        for (x, y, w, h, name) in bounding_boxes:
-            cv2.rectangle(frame, (x, y), ((x+w), (y+h)), color_map[name], 2)
-            cv2.putText(frame, name, (x, y+h-10), cv2.FONT_HERSHEY_SIMPLEX, 3, color_map[name], 3, cv2.LINE_AA)
+        for (x, y, w, h, classID, confidence) in bounding_boxes:
+            color = [int(c) for c in COLORS[classID]]
+            cv2.rectangle(frame, (x, y), ((x+w), (y+h)), color, 2)
+            cv2.putText(frame, "{}: {:.4f}".format(LABELS[classID], confidence), (x, y+h-10), cv2.FONT_HERSHEY_SIMPLEX, 2, color, 3, cv2.LINE_AA)
 
         #if follow_face and len(bounding_boxes):
         #    frame
