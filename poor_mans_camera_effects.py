@@ -40,6 +40,7 @@ facedetectors_idx = 0
 facedetect = False
 cascade_classifiers = None
 follow_face = True
+interval_s = 5
 
 
 """
@@ -95,42 +96,64 @@ def get_detectors(path, pattern):
 def input_loop():
     print("Input thread started")
     global cascade_classifiers
+    global interval_s
     while True:
         text = input()
         if text == 'f':
             name = 'frontalface'
             classifier_paths = cascade_classifiers_paths[name]
             new_idx = (classifier_paths[0] + 1) % len(classifier_paths[1])
-            print("New classifier: {}".format(cascade_classifiers_paths[facedetectors_idx]))
-            cascade_classifiers[name] = cv2.CascadeClassifier(classifier_paths[new_idx])
+            print("{} - new classifier: {}".format(name, classifier_paths[1][new_idx]))
+            cascade_classifiers[name] = cv2.CascadeClassifier(classifier_paths[1][new_idx])
             classifier_paths[0] = new_idx
             cascade_classifiers_paths[name] = classifier_paths
         elif text == 'g':
             name = 'profileface'
             classifier_paths = cascade_classifiers_paths[name]
             new_idx = (classifier_paths[0] + 1) % len(classifier_paths[1])
-            print("New classifier: {}".format(cascade_classifiers_paths[facedetectors_idx]))
-            cascade_classifiers[name] = cv2.CascadeClassifier(classifier_paths[new_idx])
+            print("{} - new classifier: {}".format(name, classifier_paths[1][new_idx]))
+            cascade_classifiers[name] = cv2.CascadeClassifier(classifier_paths[1][new_idx])
             classifier_paths[0] = new_idx
             cascade_classifiers_paths[name] = classifier_paths
         elif text == 'h':
             name = 'smile'
             classifier_paths = cascade_classifiers_paths[name]
             new_idx = (classifier_paths[0] + 1) % len(classifier_paths[1])
-            print("New classifier: {}".format(cascade_classifiers_paths[facedetectors_idx]))
-            cascade_classifiers[name] = cv2.CascadeClassifier(classifier_paths[new_idx])
+            print("{} - new classifier: {}".format(name, classifier_paths[1][new_idx]))
+            cascade_classifiers[name] = cv2.CascadeClassifier(classifier_paths[1][new_idx])
+            classifier_paths[0] = new_idx
+            cascade_classifiers_paths[name] = classifier_paths
+        elif text == 'j':
+            name = 'cat'
+            classifier_paths = cascade_classifiers_paths[name]
+            new_idx = (classifier_paths[0] + 1) % len(classifier_paths[1])
+            print("{} - new classifier: {}".format(name, classifier_paths[1][new_idx]))
+            cascade_classifiers[name] = cv2.CascadeClassifier(classifier_paths[1][new_idx])
             classifier_paths[0] = new_idx
             cascade_classifiers_paths[name] = classifier_paths
         elif text == 't':
             global follow_face
             follow_face = not follow_face
+        elif text == 'i':
+            if interval_s <= 0:
+                interval_s = 0
+            else:
+                interval_s -= 1
+            print("interval: {}s".format(interval_s))
+        elif text == 'o':
+            if interval_s < 0:
+                interval_s = 0
+            else:
+                interval_s += 1
+            print("interval: {}s".format(interval_s))
+
 
 
 
 def face_detect_fun(face_queue, bounding_boxes, scale_percent):
     print("Scale {}%".format(scale_percent))
     while True:
-        frame = face_queue.get()
+        frame, frame_idx = face_queue.get()
         print('New frame')
         detect_width = int(frame.shape[1] * scale_percent / 100)
         detect_height = int(frame.shape[0] * scale_percent / 100)
@@ -139,25 +162,42 @@ def face_detect_fun(face_queue, bounding_boxes, scale_percent):
         gray = cv2.cvtColor(frame_small, cv2.COLOR_BGR2GRAY)
         scaled_detections = cascade_classifiers['frontalface'].detectMultiScale(gray, 1.1, 4)
         detections = []
+        mirrored = False
         if len(scaled_detections) == 0:
             scaled_detections = cascade_classifiers['profileface'].detectMultiScale(gray, 1.1, 4)
+            # try second profile
+            if len(scaled_detections) == 0:
+                scaled_detections = cascade_classifiers['profileface'].detectMultiScale(cv2.flip(gray, 0), 1.1, 4)
+                mirrored = True
 
         if len(scaled_detections):
-            for (x, y, w, h) in scaled_detections:
-                detections.append((x * 100 // scale_percent, y * 100 // scale_percent, w * 100 // scale_percent, h * 100 // scale_percent, 'face'))
+            if mirrored:
+                for (x, y, w, h) in scaled_detections:
+                    detections.append((frame.shape[1] - (x * 100 // scale_percent),
+                                      y * 100 // scale_percent,
+                                      0 - (w * 100 // scale_percent),
+                                      h * 100 // scale_percent,
+                                      'face'))
+            else:
+                for (x, y, w, h) in scaled_detections:
+                    detections.append((x * 100 // scale_percent, y * 100 // scale_percent, w * 100 // scale_percent, h * 100 // scale_percent, 'face'))
                 # smile_detections = cascade_classifiers['smile'].detectMultiScale(gray[x:x+w, y:y+h], 1.1, 4)
                 # for (sx, sy, sw, sh) in smile_detections:
                 #     print("smile - {}x{} {}x{}", sx, sy, sx+sw, sy+sh)
                 #     detections.append(((sx) * 100 // scale_percent, (sy) * 100 // scale_percent,
                 #                        (sx+sw) * 100 // scale_percent, (sy+sh) * 100 // scale_percent, 'smile'))
 
-
+        scaled_detections = cascade_classifiers['cat'].detectMultiScale(gray, 1.05, minNeighbors=2)
+        if len(scaled_detections):
+            for (x, y, w, h) in scaled_detections:
+                detections.append((x * 100 // scale_percent, y * 100 // scale_percent, w * 100 // scale_percent,
+                                   h * 100 // scale_percent, 'cat'))
 
         if len(detections):
             bounding_boxes[:] = detections
             if verbose:
                 for (x, y, w, h, name) in bounding_boxes:
-                    print("{} {}x{} {}x{} @ {}x{}".format(name, x, y, (x + w), (y + h), frame.shape[1], frame.shape[0]))
+                    print("[{}] {} {}x{} {}x{} @ {}x{}".format(frame_idx, name, x, y, (x + w), (y + h), frame.shape[1], frame.shape[0]))
 
 
 
@@ -215,6 +255,7 @@ def main():
         cascade_classifiers_paths['frontalface'] = [0, get_detectors(classifier_path, '*frontalface*.xml')]
         cascade_classifiers_paths['profileface'] = [0, get_detectors(classifier_path, '*profileface*.xml')]
         #cascade_classifiers_paths['smile'] = [0, get_detectors(classifier_path, '*smile*.xml')]
+        cascade_classifiers_paths['cat'] = [0, get_detectors(classifier_path, '*frontalcatface*.xml')]
 
         cascade_classifiers = dict()
         if len(cascade_classifiers_paths['frontalface'][1]) == 0:
@@ -226,6 +267,12 @@ def main():
             cascade_classifiers['profileface'] = None
         else:
             cascade_classifiers['profileface'] = cv2.CascadeClassifier(cascade_classifiers_paths['profileface'][1][facedetectors_idx])
+
+        if len(cascade_classifiers_paths['cat'][1]) == 0:
+            cascade_classifiers['cat'] = None
+        else:
+            cascade_classifiers['cat'] = cv2.CascadeClassifier(cascade_classifiers_paths['profileface'][1][facedetectors_idx])
+
 
         # if len(cascade_classifiers_paths['smile'][1]) == 0:
         #     cascade_classifiers['smile'] = None
@@ -287,7 +334,8 @@ def main():
 
     color_map = {
         'face': (0, 0, 255),
-        'smile': (255, 0, 0)
+        'smile': (255, 0, 0),
+        'cat': (0, 255, 0)
     }
 
     threads = []
@@ -304,9 +352,9 @@ def main():
 
     while True:
         read, frame = camera.read()
-        if facedetect and frame_idx % (virtual_camera_fps * 5) == 0:
+        if facedetect and (interval_s == 0 or (frame_idx % (virtual_camera_fps * interval_s) == 0)):
             # gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            face_queue.put(frame)
+            face_queue.put((frame, frame_idx))
 
         for (x, y, w, h, name) in bounding_boxes:
             cv2.rectangle(frame, (x, y), ((x+w), (y+h)), color_map[name], 2)
