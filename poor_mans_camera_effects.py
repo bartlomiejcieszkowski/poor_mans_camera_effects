@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import argparse
 import numpy
 import cv2
 import getopt
@@ -33,8 +34,7 @@ else:
             idx += 1
         return None
 
-shortopts = "lvc:"
-longopts = ['list', 'ls', 'verbose', 'capture=', 'hq', 'facedetect', 'classifier_path=', 'yolo=']
+
 verbose = False
 capture_idx = 0
 cascade_classifiers_paths = []
@@ -364,37 +364,33 @@ def main():
 
     add_filters(filters)
 
-    try:
-        opts, args = getopt.getopt(sys.argv[1:], shortopts, longopts)
-    except getopt.GetoptError as err:
-        print(err)
-        usage()
-        return 2
+    ap = argparse.ArgumentParser()
+    ap.add_argument('-l', '--list', action='store_true', help='prints available capture devices')
+    ap.add_argument('-v', '--verbose', action='store_true', help='verbose')
+    ap.add_argument('-c', '--capture', default=0, type=int, help='capture device number')
+    ap.add_argument('--hq', action='store_true', help='high quality (1920x1080@60)')
+    ap.add_argument('--haar_cascades', default=None, type=str)
+    ap.add_argument('--yolo', default=None, type=str)
 
-    for o, a in opts:
-        if o in ('-l', '--list', '--ls'):
-            ls_mode = True
-        elif o in ('-v', '--verbose'):
-            global verbose
-            verbose = True
-        elif o in ('-c', '--capture'):
-            global capture_idx
-            try:
-                capture_idx = int(a)
-            except:
-                print("{} - is not a valid index")
-                return -1
-        elif o in ('--hq'):
-            force_hq = True
-        elif o in ('--facedetect'):
-            global facedetect
-            facedetect = True
-        elif o in ('--classifier_path'):
-            classifier_path = a
-        elif o in ('--yolo'):
-            yolo_path = a
-        else:
-            assert False, 'unhandled option'
+    args = ap.parse_args()
+
+    global verbose
+
+    ls_mode = args.list
+    verbose = args.verbose
+    capture_idx = args.capture
+    force_hq = args.hq
+
+    facedetect = False
+    if args.haar_cascades and os.path.isdir(args.haar_cascades):
+        facedetect = True
+
+    yolo = False
+    if args.yolo and os.path.isdir(args.yolo):
+        yolo = True
+
+    print(args)
+    return 0
 
     if ls_mode:
         cameras = get_available_cameras()
@@ -453,7 +449,7 @@ def main():
         threads.append(threading.Thread(target=face_detect_fun, args=(face_queue, bounding_boxes_face, scale_percent, last_detect_idx), name="Facedetect"))
         threads[-1].setDaemon(True)
 
-    if yolo_path:
+    if yolo:
         threads.append(threading.Thread(target=yolo_detect, args=(yolo_queue, bounding_boxes_yolo, yolo_path), name="YOLO"))
         threads[-1].setDaemon(True)
 
