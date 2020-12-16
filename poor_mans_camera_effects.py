@@ -510,6 +510,7 @@ def frame_loop(face_queue, yolo_queue, last_detect_idx, bounding_boxes_face, bou
 
     rgba_frame = np.zeros((camera_height, camera_width, 4), np.uint8)
     rgba_frame[:, :, 3] = 255
+    blur_count = 0
 
     while True:
         read, frame = camera.read()
@@ -527,17 +528,22 @@ def frame_loop(face_queue, yolo_queue, last_detect_idx, bounding_boxes_face, bou
             log("Applying filter {}".format(filter[0]))
             frame = filter[1](frame, *filter[2])
 
-        any_detection = 0
         if (last_detect_idx[0] + auto_blur_delay_frames) < frame_idx:
-            log("auto blur")
+            if blur_count == 0:
+                log("auto blur")
             frame = blur_pack[1](frame, *blur_pack[2])
+            blur_count += 1
         else:
+            any_detection = False
             for (x, y, w, h, text) in bounding_boxes_face:
-                any_detection += 1
+                any_detection = True
                 show_detection(frame, x, y, x + w, y + h, color_map[text], text)
             for (x, y, w, h, classID, confidence) in bounding_boxes_yolo:
+                any_detection = True
                 color = [int(c) for c in COLORS[classID]]
                 show_detection(frame, x, y, x + w, y + h, color, "{}: {:.4f}".format(LABELS[classID], confidence))
+            if any_detection:
+                blur_count = 0
 
         rgba_frame[:,:,:3] = frame
         # rgba_frame[:,:,3] = 255
