@@ -54,8 +54,6 @@ frame_filters = [None]
 g_confidence = 0.9
 g_threshold = 0.5
 
-yolo_path = None
-
 def log(fmt, *args):
     print(time.strftime("[%H:%M:%S] ", time.localtime())+fmt, *args)
 
@@ -154,6 +152,7 @@ def input_loop():
             elif c == 'h':
                 print(input_help)
             elif c == 'Q':
+                print("Exit")
                 exit(0)
             elif c == 'b':
                 g_threshold -= 0.1
@@ -229,10 +228,53 @@ def add_filters(filters):
     filters.append(create_filter_cold())
 
 
-class CascadeClassifierDetector(object):
+import abc
+
+class FrameState(object):
+    def __init__(self):
+        self.last_detect_idx = 0
+
+    def set_detect_idx(self, detect_idx):
+        self.last_detect_idx = detect_idx
+
+    def get_detect_idx(self):
+        return self.last_detect_idx
+
+
+class DetectorBase(metaclass=abc.ABCMeta):
     def __init__(self):
         self.input = queue.Queue()
         self.bounding_boxes = []
+        self.frame_state = None
+
+    def set_frame_state(self, frame_state: FrameState):
+        self.frame_state = frame_state
+
+    def detected(self, idx):
+        log("idx: {}".format(idx))
+        if self.frame_state is not None:
+            log("updating")
+            self.frame_state.set_detect_idx(idx)
+
+    def get_bounding_boxes(self):
+        return self.bounding_boxes
+
+    def put(self, item):
+        self.input.put(item)
+
+    @staticmethod
+    def thread_fun(detector):
+        detector.main()
+
+    @abc.abstractmethod
+    def main(self):
+        pass
+
+
+
+class CascadeClassifierDetector(DetectorBase):
+    def __init__(self):
+        super().__init__()
         self.classifier_files = dict()
         self.classifiers = dict()
         self.keys = []
@@ -240,12 +282,6 @@ class CascadeClassifierDetector(object):
         self.scale = 50
         #classifiers['smile'] = [0, get_detectors(classifier_path, '*smile*.xml')]
         #classifiers['cat'] = [0, get_detectors(classifier_path, '*frontalcatface*.xml')]
-
-    def get_bounding_boxes(self):
-        return self.bounding_boxes
-
-    def put(self, item):
-        self.input.put(item)
 
     def get_idx(self, key):
         return self.classifier_files[key][0]
@@ -255,9 +291,10 @@ class CascadeClassifierDetector(object):
 
     def create_classifier(self, key):
         if len(self.classifier_files[key][1]):
-            self.classifiers[key] = None
-        else:
+            log("loading classifier {} from {}".format(key, self.classifier_files[key][1][self.get_idx(key)]))
             self.classifiers[key] = cv2.CascadeClassifier(self.classifier_files[key][1][self.get_idx(key)])
+        else:
+            self.classifiers[key] = None
 
     def add_key(self, key, color):
         self.keys.append(key)
@@ -271,7 +308,7 @@ class CascadeClassifierDetector(object):
             self.classifier_files[key] = [0, get_detectors(path, '*'+key+'*.xml')]
             self.create_classifier(key)
 
-    def thread(self, last_detect_idx):
+    def main(self):
         log("Scale {}%".format(self.scale))
         while True:
             frame, frame_idx = self.input.get()
@@ -282,15 +319,15 @@ class CascadeClassifierDetector(object):
             frame_small = cv2.resize(frame, dim, interpolation=cv2.INTER_AREA)
             gray = cv2.cvtColor(frame_small, cv2.COLOR_BGR2GRAY)
             name = 'frontalface'
-            scaled_detections = cascade_classifiers[name].detectMultiScale(gray, 1.1, 4)
+            scaled_detections = self.classifiers[name].detectMultiScale(gray, 1.1, 4)
             detections = []
             mirrored = False
             if len(scaled_detections) == 0:
                 name = 'profileface'
-                scaled_detections = cascade_classifiers[name].detectMultiScale(gray, 1.1, 4)
+                scaled_detections = self.classifiers[name].detectMultiScale(gray, 1.1, 4)
                 # try second profile
                 if len(scaled_detections) == 0:
-                    scaled_detections = cascade_classifiers[name].detectMultiScale(cv2.flip(gray, 1), 1.1, 4)
+                    scaled_detections = self.classifiers[name].detectMultiScale(cv2.flip(gray, 1), 1.1, 4)
                     mirrored = True
                     if len(scaled_detections):
                         log("profileface - mirrored")
@@ -313,36 +350,24 @@ class CascadeClassifierDetector(object):
                     for (x, y, w, h) in scaled_detections:
                         detections.append((x * 100 // self.scale, y * 100 // self.scale, w * 100 // self.scale, h * 100 // self.scale, name, self.colors[name]))
             if len(detections):
-                last_detect_idx[0] = frame_idx
+                self.detected(frame_idx)
                 self.bounding_boxes = detections
                 if verbose:
                     for (x, y, w, h, name, color) in self.bounding_boxes:
                         print("[{}] {} {}x{} {}x{} @ {}x{}".format(frame_idx, name, x, y, (x + w), (y + h), frame.shape[1], frame.shape[0]))
 
-    @staticmethod
-    def thread_fun(detector, last_detect_idx):
-        detector.thread(last_detect_idx)
 
-
-
-class YoloV3Detector(object):
+class YoloV3Detector(DetectorBase):
     def __init__(self):
-        self.input = queue.Queue()
-        self.bounding_boxes = []
+        super().__init__()
         self.keys = []
         self.scale = 50
         self.path = None
 
-    def get_bounding_boxes(self):
-        return self.bounding_boxes
-
-    def put(self, item):
-        self.input.put(item)
-
     def setup(self, path):
         self.path = path
 
-    def thread(self, last_detect_idx):
+    def main(self):
         log("Loading YOLO")
         net = cv2.dnn.readNetFromDarknet(os.path.join(self.path, "yolov3.cfg"),
                                          os.path.join(self.path, "yolov3.weights"))
@@ -396,11 +421,9 @@ class YoloV3Detector(object):
                     detections.append((boxes[i][0], boxes[i][1], boxes[i][2], boxes[i][3], "{}: {:.4f}".format(LABELS[i], confidences[i]), color))
 
             if len(detections):
+                self.detected(frame_idx)
                 self.bounding_boxes = detections
 
-    @staticmethod
-    def thread_fun(detector, last_detect_idx):
-        detector.thread(last_detect_idx)
 
 
 
@@ -408,7 +431,6 @@ def main():
     ls_mode = False
     force_hq = False
     classifier_path = os.getcwd()
-    global yolo_path
     global frame_filters
     global filter_idx
 
@@ -438,7 +460,10 @@ def main():
 
     print(args)
 
+    frame_state = FrameState()
+
     detectors = []
+    threads = []
 
     if args.yolo and os.path.isdir(args.yolo):
         yolo_detector = YoloV3Detector()
@@ -458,21 +483,16 @@ def main():
     if args.onnx and os.path.isdir(args.onnx):
         onnx = True
 
-    threads = []
-    last_detect_idx = [ 0 ]
-
-    threads.append(threading.Thread(target=input_loop, name="Input"))
-    threads[-1].setDaemon(True)
+    threads.append(threading.Thread(target=input_loop, name="Input", daemon=True))
 
     for detector in detectors:
-        threads.append(threading.Thread(target=detector.thread_fun, args=(detector, last_detect_idx), name=type(detector).__name__, daemon=True))
+        detector.set_frame_state(frame_state)
+        threads.append(threading.Thread(target=detector.thread_fun, args=(detector,), name=type(detector).__name__, daemon=True))
 
-    threads.append(threading.Thread(target=frame_loop, args=(detectors, last_detect_idx), name="Frame processing"))
-    threads[-1].setDaemon(True)
+    threads.append(threading.Thread(target=frame_loop, args=(detectors, frame_state), name="Frame processing", daemon=True))
 
     for thread in threads:
         print("Starting thread: \"{}\"".format(thread.getName()))
-
         thread.start()
 
     # simple watchdog
@@ -488,8 +508,9 @@ def main():
             return -1
 
 
-def frame_loop(detectors, last_detect_idx):
+def frame_loop(detectors, frame_state):
     frame_idx = 0
+    log("Getting camera {}".format(capture_idx))
     camera = get_camera(capture_idx)
     if camera is None:
         print("Camera[{}] is unavailable".format(capture_idx))
@@ -520,7 +541,7 @@ def frame_loop(detectors, last_detect_idx):
 
     while True:
         read, frame = camera.read()
-        for detector in detectors:
+        if interval_s == 0 or (frame_idx % (virtual_camera_fps * interval_s) == 0):
             detector.put((frame, frame_idx))
 
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -529,7 +550,7 @@ def frame_loop(detectors, last_detect_idx):
             log("Applying filter {}".format(frame_filter[0]))
             frame = frame_filter[1](frame, *frame_filter[2])
 
-        if (last_detect_idx[0] + auto_blur_delay_frames) < frame_idx:
+        if (frame_state.get_detect_idx() + auto_blur_delay_frames) < frame_idx:
             if blur_count == 0:
                 log("auto blur")
             frame = blur_pack[1](frame, *blur_pack[2])
