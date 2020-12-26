@@ -55,7 +55,7 @@ g_confidence = 0.9
 g_threshold = 0.5
 
 def log(fmt, *args):
-    print(time.strftime("[%H:%M:%S] ", time.localtime())+fmt, *args)
+    print(time.strftime("[%H:%M:%S]", time.localtime()) + "[" + threading.current_thread().name + "] " + str(fmt), *args)
 
 def get_camera(idx):
     capture = cv2.VideoCapture(idx)
@@ -73,7 +73,7 @@ def get_available_cameras():
         camera = cv2.VideoCapture(idx)
         if not camera.isOpened():
             consecutive += 1
-            print("{} - fail".format(idx))
+            log("{} - fail".format(idx))
         else:
             read, img = camera.read()
             if read:
@@ -82,7 +82,7 @@ def get_available_cameras():
                     camera_width = camera.get(cv2.CAP_PROP_FRAME_WIDTH)
                     camera_height = camera.get(cv2.CAP_PROP_FRAME_HEIGHT)
                     camera_fps = camera.get(cv2.CAP_PROP_FPS)
-                    print("[{}] {} x {} @ {}fps".format(idx, camera_width, camera_height, camera_fps))
+                    log("[{}] {} x {} @ {}fps".format(idx, camera_width, camera_height, camera_fps))
                 cameras.append(idx)
             camera.release()
         idx += 1
@@ -92,14 +92,14 @@ def get_detectors(path, pattern):
     detectors = []
     for path in pathlib.Path(path).rglob(pattern):
         detectors.append(path.as_posix())
-        print(path.as_posix())
+        log(path.as_posix())
     return detectors
 
 def next_classifier(name):
     global cascade_classifiers
     classifier_paths = cascade_classifiers_paths[name]
     new_idx = (classifier_paths[0] + 1) % len(classifier_paths[1])
-    print("{} - new classifier: {}".format(name, classifier_paths[1][new_idx]))
+    log("{} - new classifier: {}".format(name, classifier_paths[1][new_idx]))
     cascade_classifiers[name] = cv2.CascadeClassifier(classifier_paths[1][new_idx])
     classifier_paths[0] = new_idx
     cascade_classifiers_paths[name] = classifier_paths
@@ -113,7 +113,7 @@ def change_interval(change):
             interval_s += change
     elif change > 0:
         interval_s += change
-    print("interval: {}s".format(interval_s))
+    log("interval: {}s".format(interval_s))
 
 def change_filter(increment):
     global filter_idx
@@ -121,7 +121,7 @@ def change_filter(increment):
 
 def input_loop():
     input_help = "f, g, h, j, t, i, o, h, ` "
-    print("Input thread started")
+    log("Input thread started")
     global interval_s
     global g_threshold
     global g_confidence
@@ -130,7 +130,7 @@ def input_loop():
         c = click.getchar()
         if c == '`':
               input_lock = not input_lock
-              print("Input Lock? {}".format(input_lock))
+              log("Input Lock? {}".format(input_lock))
         else:
             if input_lock:
                 pass
@@ -150,28 +150,28 @@ def input_loop():
             elif c == 'o':
                 change_interval(1)
             elif c == 'h':
-                print(input_help)
+                log(input_help)
             elif c == 'Q':
-                print("Exit")
+                log("Exit")
                 exit(0)
             elif c == 'b':
                 g_threshold -= 0.1
-                print("g_threshold: {:.2f}".format(g_threshold))
+                log("g_threshold: {:.2f}".format(g_threshold))
             elif c == 'B':
                 g_threshold += 0.1
-                print("g_threshold: {:.2f}".format(g_threshold))
+                log("g_threshold: {:.2f}".format(g_threshold))
             elif c == 'n':
                 g_confidence -= 0.1
-                print("g_confidence: {:.2f}".format(g_confidence))
+                log("g_confidence: {:.2f}".format(g_confidence))
             elif c == 'N':
                 g_confidence += 0.1
-                print("g_confidence: {:.2f}".format(g_confidence))
+                log("g_confidence: {:.2f}".format(g_confidence))
             elif c == 'f':
                 change_filter(-1)
             elif c == 'F':
                 change_filter(1)
             else:
-                print(c)
+                log(c)
 
 
 def filter_sharpen(frame, kernel):
@@ -357,7 +357,7 @@ class CascadeClassifierDetector(DetectorBase):
                 self.bounding_boxes = detections
                 if verbose:
                     for (x, y, w, h, name, color) in self.bounding_boxes:
-                        print("[{}] {} {}x{} {}x{} @ {}x{}".format(frame_idx, name, x, y, (x + w), (y + h), frame.shape[1], frame.shape[0]))
+                        log("[{}] {} {}x{} {}x{} @ {}x{}".format(frame_idx, name, x, y, (x + w), (y + h), frame.shape[1], frame.shape[0]))
 
 
 class YoloV3Detector(DetectorBase):
@@ -454,14 +454,14 @@ def main():
 
     if args.list:
         cameras = get_available_cameras()
-        print(cameras)
+        log(cameras)
         return 0
 
     verbose = args.verbose
     capture_idx = args.capture
     force_hq = args.hq
 
-    print(args)
+    log(args)
 
     frame_state = FrameState()
 
@@ -492,10 +492,10 @@ def main():
         detector.set_frame_state(frame_state)
         threads.append(threading.Thread(target=detector.thread_fun, args=(detector,), name=type(detector).__name__, daemon=True))
 
-    threads.append(threading.Thread(target=frame_loop, args=(detectors, frame_state), name="Frame processing", daemon=True))
+    threads.append(threading.Thread(target=frame_loop, args=(detectors, frame_state), name="FrameProcessing", daemon=True))
 
     for thread in threads:
-        print("Starting thread: \"{}\"".format(thread.getName()))
+        log("Starting thread: \"{}\"".format(thread.getName()))
         thread.start()
 
     # simple watchdog
@@ -516,7 +516,7 @@ def frame_loop(detectors, frame_state):
     log("Getting camera {}".format(capture_idx))
     camera = get_camera(capture_idx)
     if camera is None:
-        print("Camera[{}] is unavailable".format(capture_idx))
+        log("Camera[{}] is unavailable".format(capture_idx))
         return -2
 
     camera.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
@@ -528,7 +528,7 @@ def frame_loop(detectors, frame_state):
     camera_fps = int(camera.get(cv2.CAP_PROP_FPS))
     if camera_fps == 0:
         camera_fps = 30
-    print("{} x {} @ {}fps".format(camera_width, camera_height, camera_fps))
+    log("{} x {} @ {}fps".format(camera_width, camera_height, camera_fps))
 
     virtual_camera_fps = camera_fps // 2
     virtual_camera = get_virtual_camera(camera_width, camera_height, virtual_camera_fps)
