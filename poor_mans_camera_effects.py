@@ -37,20 +37,12 @@ else:
 
 verbose = False
 capture_idx = 0
-cascade_classifiers_paths = []
-facedetectors_idx = 0
-facedetect = False
-cascade_classifiers = None
+
 follow_face = True
 interval_s = 5
 filter_idx = 0
-filters = [ None ]
+frame_filters = [None]
 
-color_map = {
-    'face': (0, 0, 255),
-    'smile': (255, 0, 0),
-    'cat': (0, 255, 0)
-}
 
 """
 1. main
@@ -127,7 +119,7 @@ def change_interval(change):
 
 def change_filter(increment):
     global filter_idx
-    filter_idx = (filter_idx + increment) % len(filters)
+    filter_idx = (filter_idx + increment) % len(frame_filters)
 
 def input_loop():
     input_help = "f, g, h, j, t, i, o, h, ` "
@@ -183,119 +175,6 @@ def input_loop():
                 print(c)
 
 
-
-def yolo_detect(queue, bounding_boxes, yolo_path):
-    print("Loading YOLO")
-    net = cv2.dnn.readNetFromDarknet(os.path.join(yolo_path, "yolov3.cfg"), os.path.join(yolo_path, "yolov3.weights"))
-    net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
-
-    ln = net.getLayerNames()
-    print("unconnected layers")
-    for i in net.getUnconnectedOutLayers():
-        print(i)
-        print(ln[i[0] - 1])
-    ln = [ln[i[0] - 1] for i in net.getUnconnectedOutLayers()]
-    print(ln)
-
-    while True:
-        frame, frame_idx = queue.get()
-        (H, W) = frame.shape[:2]
-
-        blob = cv2.dnn.blobFromImage(frame, 1 / 255.0, (416, 416), swapRB=True, crop=False)
-        net.setInput(blob)
-        start = time.time()
-        layerOutputs = net.forward(ln)
-        end = time.time()
-        log("YOLO processing took {:.6f} seconds".format(end - start))
-        boxes = []
-        confidences = []
-        classIDs = []
-        detections = []
-        for output in layerOutputs:
-            for detection in output:
-                scores = detection[5:]
-                classID = np.argmax(scores)
-                confidence = scores[classID]
-
-                if confidence > g_confidence:
-                    box = detection[0:4] * np.array([W, H, W, H])
-                    (centerX, centerY, width, height) = box.astype("int")
-
-                    x = int(centerX - (width / 2))
-                    y = int(centerY - (height / 2))
-                    boxes.append([x, y, int(width), int(height)])
-                    confidences.append(float(confidence))
-                    classIDs.append(classID)
-
-        idxs = cv2.dnn.NMSBoxes(boxes, confidences, g_confidence, g_threshold)
-        if len(idxs) > 0:
-            for i in idxs.flatten():
-                detections.append((boxes[i][0], boxes[i][1], boxes[i][2], boxes[i][3], i, confidences[i]))
-
-        if len(detections):
-            bounding_boxes[:] = detections
-
-
-def face_detect_fun(face_queue, bounding_boxes, scale_percent, last_detect_idx):
-    print("Scale {}%".format(scale_percent))
-    while True:
-        frame, frame_idx = face_queue.get()
-        detect_width = int(frame.shape[1] * scale_percent / 100)
-        detect_height = int(frame.shape[0] * scale_percent / 100)
-        dim = (detect_width, detect_height)
-        measurements = []
-        measurements.append(time.time())
-        frame_small = cv2.resize(frame, dim, interpolation=cv2.INTER_AREA)
-        gray = cv2.cvtColor(frame_small, cv2.COLOR_BGR2GRAY)
-        name = 'frontalface'
-        scaled_detections = cascade_classifiers[name].detectMultiScale(gray, 1.1, 4)
-        detections = []
-        mirrored = False
-        if len(scaled_detections) == 0:
-            scaled_detections = cascade_classifiers['profileface'].detectMultiScale(gray, 1.1, 4)
-            # try second profile
-            if len(scaled_detections) == 0:
-                scaled_detections = cascade_classifiers['profileface'].detectMultiScale(cv2.flip(gray, 1), 1.1, 4)
-                mirrored = True
-                if len(scaled_detections):
-                    log("profileface - mirrored")
-            else:
-                log("profileface")
-        else:
-            log("frontalface")
-        measurements.append(time.time())
-        log("facedect - took {:.6f} seconds".format(measurements[-1] - measurements[0]))
-
-        if len(scaled_detections):
-            if mirrored:
-                for (x, y, w, h) in scaled_detections:
-                    detections.append((frame.shape[1] - (x * 100 // scale_percent),
-                                      y * 100 // scale_percent,
-                                      0 - (w * 100 // scale_percent),
-                                      h * 100 // scale_percent,
-                                      'face'))
-            else:
-                for (x, y, w, h) in scaled_detections:
-                    detections.append((x * 100 // scale_percent, y * 100 // scale_percent, w * 100 // scale_percent, h * 100 // scale_percent, 'face'))
-                # smile_detections = cascade_classifiers['smile'].detectMultiScale(gray[x:x+w, y:y+h], 1.1, 4)
-                # for (sx, sy, sw, sh) in smile_detections:
-                #     print("smile - {}x{} {}x{}", sx, sy, sx+sw, sy+sh)
-                #     detections.append(((sx) * 100 // scale_percent, (sy) * 100 // scale_percent,
-                #                        (sx+sw) * 100 // scale_percent, (sy+sh) * 100 // scale_percent, 'smile'))
-
-        # scaled_detections = cascade_classifiers['cat'].detectMultiScale(gray, 1.05, minNeighbors=2)
-        # if len(scaled_detections):
-        #     for (x, y, w, h) in scaled_detections:
-        #         detections.append((x * 100 // scale_percent, y * 100 // scale_percent, w * 100 // scale_percent,
-        #                            h * 100 // scale_percent, 'cat'))
-
-        if len(detections):
-            last_detect_idx[0] = frame_idx
-            bounding_boxes[:] = detections
-            if verbose:
-                for (x, y, w, h, name) in bounding_boxes:
-                    print("[{}] {} {}x{} {}x{} @ {}x{}".format(frame_idx, name, x, y, (x + w), (y + h), frame.shape[1], frame.shape[0]))
-
 def filter_sharpen(frame, kernel):
     return cv2.filter2D(frame, -1, kernel)
 
@@ -350,19 +229,190 @@ def add_filters(filters):
     filters.append(create_filter_cold())
 
 
-def usage():
-    print("shortopts: {}".format(shortopts))
-    print("longopts: {}".format(longopts))
+class CascadeClassifierDetector(object):
+    def __init__(self):
+        self.input = queue.Queue()
+        self.bounding_boxes = []
+        self.classifier_files = dict()
+        self.classifiers = dict()
+        self.keys = []
+        self.colors = dict()
+        self.scale = 50
+        #classifiers['smile'] = [0, get_detectors(classifier_path, '*smile*.xml')]
+        #classifiers['cat'] = [0, get_detectors(classifier_path, '*frontalcatface*.xml')]
+
+    def get_bounding_boxes(self):
+        return self.bounding_boxes
+
+    def put(self, item):
+        self.input.put(item)
+
+    def get_idx(self, key):
+        return self.classifier_files[key][0]
+
+    def add_idx(self, key, val):
+        self.classifier_files[key][0] = (self.classifier_files[key][0] + val) % len(self.classifier_files[key][1])
+
+    def create_classifier(self, key):
+        if len(self.classifier_files[key][1]):
+            self.classifiers[key] = None
+        else:
+            self.classifiers[key] = cv2.CascadeClassifier(self.classifier_files[key][1][self.get_idx(key)])
+
+    def add_key(self, key, color):
+        self.keys.append(key)
+        self.colors[key] = color
+
+    def set_scale(self, scale):
+        self.scale = scale
+
+    def setup(self, path):
+        for key in self.keys:
+            self.classifier_files[key] = [0, get_detectors(path, '*'+key+'*.xml')]
+            self.create_classifier(key)
+
+    def thread(self, last_detect_idx):
+        log("Scale {}%".format(self.scale))
+        while True:
+            frame, frame_idx = self.input.get()
+            detect_width = int(frame.shape[1]) * self.scale // 100
+            detect_height = int(frame.shape[0]) * self.scale // 100
+            dim = (detect_width, detect_height)
+            measurements = [time.time()]
+            frame_small = cv2.resize(frame, dim, interpolation=cv2.INTER_AREA)
+            gray = cv2.cvtColor(frame_small, cv2.COLOR_BGR2GRAY)
+            name = 'frontalface'
+            scaled_detections = cascade_classifiers[name].detectMultiScale(gray, 1.1, 4)
+            detections = []
+            mirrored = False
+            if len(scaled_detections) == 0:
+                name = 'profileface'
+                scaled_detections = cascade_classifiers[name].detectMultiScale(gray, 1.1, 4)
+                # try second profile
+                if len(scaled_detections) == 0:
+                    scaled_detections = cascade_classifiers[name].detectMultiScale(cv2.flip(gray, 1), 1.1, 4)
+                    mirrored = True
+                    if len(scaled_detections):
+                        log("profileface - mirrored")
+                else:
+                    log("profileface")
+            else:
+                log("frontalface")
+            measurements.append(time.time())
+            log("facedect - took {:.6f} seconds".format(measurements[-1] - measurements[0]))
+
+            if len(scaled_detections):
+                if mirrored:
+                    for (x, y, w, h) in scaled_detections:
+                        detections.append((frame.shape[1] - (x * 100 // self.scale),
+                                          y * 100 // self.scale,
+                                          0 - (w * 100 // self.scale),
+                                          h * 100 // self.scale,
+                                          name, self.colors[name]))
+                else:
+                    for (x, y, w, h) in scaled_detections:
+                        detections.append((x * 100 // self.scale, y * 100 // self.scale, w * 100 // self.scale, h * 100 // self.scale, name, self.colors[name]))
+            if len(detections):
+                last_detect_idx[0] = frame_idx
+                self.bounding_boxes = detections
+                if verbose:
+                    for (x, y, w, h, name, color) in self.bounding_boxes:
+                        print("[{}] {} {}x{} {}x{} @ {}x{}".format(frame_idx, name, x, y, (x + w), (y + h), frame.shape[1], frame.shape[0]))
+
+    @staticmethod
+    def thread_fun(detector, last_detect_idx):
+        detector.thread(last_detect_idx)
+
+
+
+class YoloV3Detector(object):
+    def __init__(self):
+        self.input = queue.Queue()
+        self.bounding_boxes = []
+        self.keys = []
+        self.scale = 50
+        self.path = None
+
+    def get_bounding_boxes(self):
+        return self.bounding_boxes
+
+    def put(self, item):
+        self.input.put(item)
+
+    def setup(self, path):
+        self.path = path
+
+    def thread(self, last_detect_idx):
+        log("Loading YOLO")
+        net = cv2.dnn.readNetFromDarknet(os.path.join(self.path, "yolov3.cfg"),
+                                         os.path.join(self.path, "yolov3.weights"))
+        net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+
+        ln = net.getLayerNames()
+        log("unconnected layers")
+        for i in net.getUnconnectedOutLayers():
+            log(i)
+            log(ln[i[0] - 1])
+        ln = [ln[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+        log(ln)
+
+        LABELS = open(os.path.join(self.path, 'coco.names')).read().strip().split("\n")
+        COLORS = np.random.randint(0, 255, size=(len(LABELS), 3), dtype="uint8")
+
+        while True:
+            frame, frame_idx = self.input.get()
+            (H, W) = frame.shape[:2]
+
+            blob = cv2.dnn.blobFromImage(frame, 1 / 255.0, (416, 416), swapRB=True, crop=False)
+            net.setInput(blob)
+            start = time.time()
+            layer_outputs = net.forward(ln)
+            end = time.time()
+            log("YOLO processing took {:.6f} seconds".format(end - start))
+            boxes = []
+            confidences = []
+            class_ids = []
+            detections = []
+            for output in layer_outputs:
+                for detection in output:
+                    scores = detection[5:]
+                    class_id = np.argmax(scores)
+                    confidence = scores[class_id]
+
+                    if confidence > g_confidence:
+                        box = detection[0:4] * np.array([W, H, W, H])
+                        (centerX, centerY, width, height) = box.astype("int")
+
+                        x = int(centerX - (width / 2))
+                        y = int(centerY - (height / 2))
+                        boxes.append([x, y, int(width), int(height)])
+                        confidences.append(float(confidence))
+                        class_ids.append(class_id)
+
+            idxs = cv2.dnn.NMSBoxes(boxes, confidences, g_confidence, g_threshold)
+            if len(idxs) > 0:
+                for i in idxs.flatten():
+                    color = [int(c) for c in COLORS[i]]
+                    detections.append((boxes[i][0], boxes[i][1], boxes[i][2], boxes[i][3], "{}: {:.4f}".format(LABELS[i], confidences[i]), color))
+
+            if len(detections):
+                self.bounding_boxes = detections
+
+    @staticmethod
+    def thread_fun(detector, last_detect_idx):
+        detector.thread(last_detect_idx)
+
+
 
 def main():
     ls_mode = False
     force_hq = False
     classifier_path = os.getcwd()
     global yolo_path
-    global filters
+    global frame_filters
     global filter_idx
 
-    add_filters(filters)
+    add_filters(frame_filters)
 
     ap = argparse.ArgumentParser()
     ap.add_argument('-l', '--list', action='store_true', help='prints available capture devices')
@@ -371,73 +421,42 @@ def main():
     ap.add_argument('--hq', action='store_true', help='high quality (1920x1080@60)')
     ap.add_argument('--haar_cascades', default=None, type=str)
     ap.add_argument('--yolo', default=None, type=str)
+    ap.add_argument('--onnx', default=None, type=str)
 
     args = ap.parse_args()
 
     global verbose
 
-    ls_mode = args.list
-    verbose = args.verbose
-    capture_idx = args.capture
-    force_hq = args.hq
-
-    facedetect = False
-    if args.haar_cascades and os.path.isdir(args.haar_cascades):
-        facedetect = True
-
-    yolo = False
-    if args.yolo and os.path.isdir(args.yolo):
-        yolo = True
-
-    print(args)
-    return 0
-
-    if ls_mode:
+    if args.list:
         cameras = get_available_cameras()
         print(cameras)
         return 0
 
-    if facedetect:
-        global cascade_classifiers_paths
-        global cascade_classifiers
+    verbose = args.verbose
+    capture_idx = args.capture
+    force_hq = args.hq
 
-        '*face*.xml'
-        cascade_classifiers_paths = dict()
-        cascade_classifiers_paths['frontalface'] = [0, get_detectors(classifier_path, '*frontalface*.xml')]
-        cascade_classifiers_paths['profileface'] = [0, get_detectors(classifier_path, '*profileface*.xml')]
-        #cascade_classifiers_paths['smile'] = [0, get_detectors(classifier_path, '*smile*.xml')]
-        #cascade_classifiers_paths['cat'] = [0, get_detectors(classifier_path, '*frontalcatface*.xml')]
+    print(args)
 
-        cascade_classifiers = dict()
-        if len(cascade_classifiers_paths['frontalface'][1]) == 0:
-            cascade_classifiers['frontalface'] = None
-        else:
-            cascade_classifiers['frontalface'] = cv2.CascadeClassifier(cascade_classifiers_paths['frontalface'][1][facedetectors_idx])
+    detectors = []
 
-        if len(cascade_classifiers_paths['profileface'][1]) == 0:
-            cascade_classifiers['profileface'] = None
-        else:
-            cascade_classifiers['profileface'] = cv2.CascadeClassifier(cascade_classifiers_paths['profileface'][1][facedetectors_idx])
+    if args.yolo and os.path.isdir(args.yolo):
+        yolo_detector = YoloV3Detector()
+        yolo_detector.setup(args.yolo)
+        detectors.append(yolo_detector)
 
-        #if len(cascade_classifiers_paths['cat'][1]) == 0:
-        #    cascade_classifiers['cat'] = None
-        #else:
-        #    cascade_classifiers['cat'] = cv2.CascadeClassifier(cascade_classifiers_paths['profileface'][1][facedetectors_idx])
+    if args.haar_cascades and os.path.isdir(args.haar_cascades):
+        cascade_detector = CascadeClassifierDetector()
+        cascade_detector.add_key('frontalface', (0, 0, 255))
+        cascade_detector.add_key('profileface', (0, 0, 255))
+        #cascade_detector.add_key('smile', (255, 0, 0))
+        #cascade_detector.add_key('cat', (0, 255, 0))
+        cascade_detector.setup(args.haar_cascades)
+        detectors.append(cascade_detector)
 
-
-        # if len(cascade_classifiers_paths['smile'][1]) == 0:
-        #     cascade_classifiers['smile'] = None
-        # else:
-        #     cascade_classifiers['smile'] = cv2.CascadeClassifier(cascade_classifiers_paths['profileface'][1][facedetectors_idx])
-
-
-    bounding_boxes_yolo = []
-    bounding_boxes_face = []
-
-    scale_percent = 50
-
-    yolo_queue = queue.Queue()
-    face_queue = queue.Queue()
+    onnx = False
+    if args.onnx and os.path.isdir(args.onnx):
+        onnx = True
 
     threads = []
     last_detect_idx = [ 0 ]
@@ -445,15 +464,10 @@ def main():
     threads.append(threading.Thread(target=input_loop, name="Input"))
     threads[-1].setDaemon(True)
 
-    if facedetect:
-        threads.append(threading.Thread(target=face_detect_fun, args=(face_queue, bounding_boxes_face, scale_percent, last_detect_idx), name="Facedetect"))
-        threads[-1].setDaemon(True)
+    for detector in detectors:
+        threads.append(threading.Thread(target=detector.thread_fun, args=(detector, last_detect_idx), name=type(detector).__name__, daemon=True))
 
-    if yolo:
-        threads.append(threading.Thread(target=yolo_detect, args=(yolo_queue, bounding_boxes_yolo, yolo_path), name="YOLO"))
-        threads[-1].setDaemon(True)
-
-    threads.append(threading.Thread(target=frame_loop, args=(face_queue, yolo_queue, last_detect_idx, bounding_boxes_face, bounding_boxes_yolo), name="Frame processing"))
+    threads.append(threading.Thread(target=frame_loop, args=(detectors, last_detect_idx), name="Frame processing"))
     threads[-1].setDaemon(True)
 
     for thread in threads:
@@ -473,11 +487,8 @@ def main():
             # respawn or die
             return -1
 
-def frame_loop(face_queue, yolo_queue, last_detect_idx, bounding_boxes_face, bounding_boxes_yolo):
-    if yolo_path:
-        LABELS = open(os.path.join(yolo_path, 'coco.names')).read().strip().split("\n")
-        COLORS = np.random.randint(0, 255, size=(len(LABELS), 3), dtype="uint8")
 
+def frame_loop(detectors, last_detect_idx):
     frame_idx = 0
     camera = get_camera(capture_idx)
     if camera is None:
@@ -498,7 +509,6 @@ def frame_loop(face_queue, yolo_queue, last_detect_idx, bounding_boxes_face, bou
     virtual_camera_fps = camera_fps // 2
     virtual_camera = get_virtual_camera(camera_width, camera_height, virtual_camera_fps)
 
-
     auto_blur_delay_s = 5
     auto_blur_delay_frames = auto_blur_delay_s * virtual_camera_fps
     last_face_frame_idx = 0
@@ -510,19 +520,14 @@ def frame_loop(face_queue, yolo_queue, last_detect_idx, bounding_boxes_face, bou
 
     while True:
         read, frame = camera.read()
-        if facedetect and (interval_s == 0 or (frame_idx % (virtual_camera_fps * interval_s) == 0)):
-            face_queue.put((frame, frame_idx))
-        if yolo_path and (interval_s == 0 or (frame_idx % (virtual_camera_fps * interval_s) == 0)):
-            yolo_queue.put((frame, frame_idx))
-
-        #if follow_face and len(bounding_boxes):
-        #    frame
+        for detector in detectors:
+            detector.put((frame, frame_idx))
 
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        if filters[filter_idx]:
-            filter = filters[filter_idx]
-            log("Applying filter {}".format(filter[0]))
-            frame = filter[1](frame, *filter[2])
+        if frame_filters[filter_idx]:
+            frame_filter = frame_filters[filter_idx]
+            log("Applying filter {}".format(frame_filter[0]))
+            frame = frame_filter[1](frame, *frame_filter[2])
 
         if (last_detect_idx[0] + auto_blur_delay_frames) < frame_idx:
             if blur_count == 0:
@@ -531,13 +536,11 @@ def frame_loop(face_queue, yolo_queue, last_detect_idx, bounding_boxes_face, bou
             blur_count += 1
         else:
             any_detection = False
-            for (x, y, w, h, text) in bounding_boxes_face:
-                any_detection = True
-                show_detection(frame, x, y, x + w, y + h, color_map[text], text)
-            for (x, y, w, h, classID, confidence) in bounding_boxes_yolo:
-                any_detection = True
-                color = [int(c) for c in COLORS[classID]]
-                show_detection(frame, x, y, x + w, y + h, color, "{}: {:.4f}".format(LABELS[classID], confidence))
+            for detector in detectors:
+                for (x, y, w, h, text, color) in detector.get_bounding_boxes():
+                    any_detection = True
+                    show_detection(frame, x, y, x + w, y + h, color, text)
+
             if any_detection:
                 blur_count = 0
 
@@ -548,6 +551,7 @@ def frame_loop(face_queue, yolo_queue, last_detect_idx, bounding_boxes_face, bou
         frame_idx += 1
 
     return 0
+
 
 def show_detection(frame, x, y, xw, yh, color, text):
     cv2.rectangle(frame, (x, y), (xw, yh), color, 2)
