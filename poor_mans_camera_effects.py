@@ -243,7 +243,7 @@ class FrameState(object):
 
 class DetectorBase(metaclass=abc.ABCMeta):
     def __init__(self):
-        self.input = queue.Queue()
+        self.input = queue.Queue(maxsize=1)
         self.bounding_boxes = []
         self.frame_state = None
 
@@ -260,7 +260,10 @@ class DetectorBase(metaclass=abc.ABCMeta):
         return self.bounding_boxes
 
     def put(self, item):
-        self.input.put(item)
+        try:
+            self.input.put(item, block=False)
+        except queue.Full:
+            log("queue full")
 
     @staticmethod
     def thread_fun(detector):
@@ -441,7 +444,7 @@ def main():
     ap.add_argument('-v', '--verbose', action='store_true', help='verbose')
     ap.add_argument('-c', '--capture', default=0, type=int, help='capture device number')
     ap.add_argument('--hq', action='store_true', help='high quality (1920x1080@60)')
-    ap.add_argument('--haar_cascades', default=None, type=str)
+    ap.add_argument('--haar-cascades', default=None, type=str)
     ap.add_argument('--yolo', default=None, type=str)
     ap.add_argument('--onnx', default=None, type=str)
 
@@ -530,9 +533,8 @@ def frame_loop(detectors, frame_state):
     virtual_camera_fps = camera_fps // 2
     virtual_camera = get_virtual_camera(camera_width, camera_height, virtual_camera_fps)
 
-    auto_blur_delay_s = 5
+    auto_blur_delay_s = 10
     auto_blur_delay_frames = auto_blur_delay_s * virtual_camera_fps
-    last_face_frame_idx = 0
     blur_pack = create_filter_blur2()
 
     rgba_frame = np.zeros((camera_height, camera_width, 4), np.uint8)
@@ -542,7 +544,8 @@ def frame_loop(detectors, frame_state):
     while True:
         read, frame = camera.read()
         if interval_s == 0 or (frame_idx % (virtual_camera_fps * interval_s) == 0):
-            detector.put((frame, frame_idx))
+            for detector in detectors:
+                detector.put((frame, frame_idx))
 
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         if frame_filters[filter_idx]:
