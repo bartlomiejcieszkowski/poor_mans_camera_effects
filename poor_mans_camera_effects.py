@@ -1,17 +1,14 @@
 #!/usr/bin/env python
 
 import argparse
-import numpy
-import cv2
-import getopt
-import sys
 import os
-import numpy as np
-import pathlib
+import sys
 import threading
-import queue
 import time
+
 import click
+
+from framework.base import log
 
 if os.name == 'nt':
     import pyvirtualcam
@@ -51,11 +48,7 @@ frame_filters = [None]
 3. passthrough cam to fakecam
 """
 
-g_confidence = 0.9
-g_threshold = 0.5
 
-def log(fmt, *args):
-    print(time.strftime("[%H:%M:%S]", time.localtime()) + "[" + threading.current_thread().name + "] " + str(fmt), *args)
 
 def get_camera(idx):
     capture = cv2.VideoCapture(idx)
@@ -88,12 +81,6 @@ def get_available_cameras():
         idx += 1
     return cameras
 
-def get_detectors(path, pattern):
-    detectors = []
-    for path in pathlib.Path(path).rglob(pattern):
-        detectors.append(path.as_posix())
-        log(path.as_posix())
-    return detectors
 
 def next_classifier(name):
     global cascade_classifiers
@@ -227,205 +214,6 @@ def add_filters(filters):
     filters.append(create_filter_warm())
     filters.append(create_filter_cold())
 
-
-import abc
-
-class FrameState(object):
-    def __init__(self):
-        self.last_detect_idx = 0
-
-    def set_detect_idx(self, detect_idx):
-        self.last_detect_idx = detect_idx
-
-    def get_detect_idx(self):
-        return self.last_detect_idx
-
-
-class DetectorBase(metaclass=abc.ABCMeta):
-    def __init__(self):
-        self.input = queue.Queue(maxsize=1)
-        self.bounding_boxes = []
-        self.frame_state = None
-
-    def set_frame_state(self, frame_state: FrameState):
-        self.frame_state = frame_state
-
-    def detected(self, idx):
-        log("idx: {}".format(idx))
-        if self.frame_state is not None:
-            log("updating")
-            self.frame_state.set_detect_idx(idx)
-
-    def get_bounding_boxes(self):
-        return self.bounding_boxes
-
-    def put(self, item):
-        try:
-            self.input.put(item, block=False)
-        except queue.Full:
-            log("queue full")
-
-    @staticmethod
-    def thread_fun(detector):
-        detector.main()
-
-    @abc.abstractmethod
-    def main(self):
-        pass
-
-
-
-class CascadeClassifierDetector(DetectorBase):
-    def __init__(self):
-        super().__init__()
-        self.classifier_files = dict()
-        self.classifiers = dict()
-        self.keys = []
-        self.colors = dict()
-        self.scale = 50
-        #classifiers['smile'] = [0, get_detectors(classifier_path, '*smile*.xml')]
-        #classifiers['cat'] = [0, get_detectors(classifier_path, '*frontalcatface*.xml')]
-
-    def get_idx(self, key):
-        return self.classifier_files[key][0]
-
-    def add_idx(self, key, val):
-        self.classifier_files[key][0] = (self.classifier_files[key][0] + val) % len(self.classifier_files[key][1])
-
-    def create_classifier(self, key):
-        if len(self.classifier_files[key][1]):
-            log("loading classifier {} from {}".format(key, self.classifier_files[key][1][self.get_idx(key)]))
-            self.classifiers[key] = cv2.CascadeClassifier(self.classifier_files[key][1][self.get_idx(key)])
-        else:
-            self.classifiers[key] = None
-
-    def add_key(self, key, color):
-        self.keys.append(key)
-        self.colors[key] = color
-
-    def set_scale(self, scale):
-        self.scale = scale
-
-    def setup(self, path):
-        for key in self.keys:
-            self.classifier_files[key] = [0, get_detectors(path, '*'+key+'*.xml')]
-            self.create_classifier(key)
-
-    def main(self):
-        log("Scale {}%".format(self.scale))
-        while True:
-            frame, frame_idx = self.input.get()
-            detect_width = int(frame.shape[1]) * self.scale // 100
-            detect_height = int(frame.shape[0]) * self.scale // 100
-            dim = (detect_width, detect_height)
-            measurements = [time.time()]
-            frame_small = cv2.resize(frame, dim, interpolation=cv2.INTER_AREA)
-            gray = cv2.cvtColor(frame_small, cv2.COLOR_BGR2GRAY)
-            name = 'frontalface'
-            scaled_detections = self.classifiers[name].detectMultiScale(gray, 1.1, 4)
-            detections = []
-            mirrored = False
-            if len(scaled_detections) == 0:
-                name = 'profileface'
-                scaled_detections = self.classifiers[name].detectMultiScale(gray, 1.1, 4)
-                # try second profile
-                if len(scaled_detections) == 0:
-                    scaled_detections = self.classifiers[name].detectMultiScale(cv2.flip(gray, 1), 1.1, 4)
-                    mirrored = True
-                    if len(scaled_detections):
-                        log("profileface - mirrored")
-                else:
-                    log("profileface")
-            else:
-                log("frontalface")
-            measurements.append(time.time())
-            log("facedect - took {:.6f} seconds".format(measurements[-1] - measurements[0]))
-
-            if len(scaled_detections):
-                if mirrored:
-                    for (x, y, w, h) in scaled_detections:
-                        detections.append((frame.shape[1] - (x * 100 // self.scale),
-                                          y * 100 // self.scale,
-                                          0 - (w * 100 // self.scale),
-                                          h * 100 // self.scale,
-                                          name, self.colors[name]))
-                else:
-                    for (x, y, w, h) in scaled_detections:
-                        detections.append((x * 100 // self.scale, y * 100 // self.scale, w * 100 // self.scale, h * 100 // self.scale, name, self.colors[name]))
-            if len(detections):
-                self.detected(frame_idx)
-                self.bounding_boxes = detections
-                if verbose:
-                    for (x, y, w, h, name, color) in self.bounding_boxes:
-                        log("[{}] {} {}x{} {}x{} @ {}x{}".format(frame_idx, name, x, y, (x + w), (y + h), frame.shape[1], frame.shape[0]))
-
-
-class YoloV3Detector(DetectorBase):
-    def __init__(self):
-        super().__init__()
-        self.keys = []
-        self.scale = 50
-        self.path = None
-
-    def setup(self, path):
-        self.path = path
-
-    def main(self):
-        log("Loading YOLO")
-        net = cv2.dnn.readNetFromDarknet(os.path.join(self.path, "yolov3.cfg"),
-                                         os.path.join(self.path, "yolov3.weights"))
-        net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
-
-        ln = net.getLayerNames()
-        log("unconnected layers")
-        for i in net.getUnconnectedOutLayers():
-            log(i)
-            log(ln[i[0] - 1])
-        ln = [ln[i[0] - 1] for i in net.getUnconnectedOutLayers()]
-        log(ln)
-
-        LABELS = open(os.path.join(self.path, 'coco.names')).read().strip().split("\n")
-        COLORS = np.random.randint(0, 255, size=(len(LABELS), 3), dtype="uint8")
-
-        while True:
-            frame, frame_idx = self.input.get()
-            (H, W) = frame.shape[:2]
-
-            blob = cv2.dnn.blobFromImage(frame, 1 / 255.0, (416, 416), swapRB=True, crop=False)
-            net.setInput(blob)
-            start = time.time()
-            layer_outputs = net.forward(ln)
-            end = time.time()
-            log("YOLO processing took {:.6f} seconds".format(end - start))
-            boxes = []
-            confidences = []
-            class_ids = []
-            detections = []
-            for output in layer_outputs:
-                for detection in output:
-                    scores = detection[5:]
-                    class_id = np.argmax(scores)
-                    confidence = scores[class_id]
-
-                    if confidence > g_confidence:
-                        box = detection[0:4] * np.array([W, H, W, H])
-                        (centerX, centerY, width, height) = box.astype("int")
-
-                        x = int(centerX - (width / 2))
-                        y = int(centerY - (height / 2))
-                        boxes.append([x, y, int(width), int(height)])
-                        confidences.append(float(confidence))
-                        class_ids.append(class_id)
-
-            idxs = cv2.dnn.NMSBoxes(boxes, confidences, g_confidence, g_threshold)
-            if len(idxs) > 0:
-                for i in idxs.flatten():
-                    color = [int(c) for c in COLORS[i]]
-                    detections.append((boxes[i][0], boxes[i][1], boxes[i][2], boxes[i][3], "{}: {:.4f}".format(LABELS[i], confidences[i]), color))
-
-            if len(detections):
-                self.detected(frame_idx)
-                self.bounding_boxes = detections
 
 
 import cv2
