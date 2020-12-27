@@ -10,7 +10,7 @@ import click
 import cv2
 import numpy as np
 
-from framework.base import log
+from framework.base import log, set_log_level, LogLevel
 from framework.camera import get_available_cameras, get_camera
 from framework.detectors.cascade_classifier_detector import CascadeClassifierDetector
 from framework.detectors.detector_base import FrameState
@@ -40,7 +40,9 @@ else:
         return None
 
 
-verbose = False
+#api = cv2.CAP_DSHOW
+api = cv2.CAP_MSMF
+
 capture_idx = 0
 
 follow_face = True
@@ -163,14 +165,16 @@ def main():
 
     args = ap.parse_args()
 
-    global verbose
+
+
+    if args.verbose:
+        set_log_level(LogLevel.VERBOSE)
 
     if args.list:
-        cameras = get_available_cameras()
+        cameras = get_available_cameras(api)
         log(cameras)
         return 0
 
-    verbose = args.verbose
     capture_idx = args.capture
     force_hq = args.hq
 
@@ -227,7 +231,7 @@ def main():
 def frame_loop(detectors, frame_state):
     frame_idx = 0
     log("Getting camera {}".format(capture_idx))
-    camera = get_camera(capture_idx)
+    camera = get_camera(capture_idx, api)
     if camera is None:
         log("Camera[{}] is unavailable".format(capture_idx))
         return -2

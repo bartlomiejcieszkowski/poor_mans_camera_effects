@@ -1,4 +1,4 @@
-from framework.base import log, get_files
+from framework.base import log, get_files, log_verbose
 from framework.detectors.detector_base import DetectorBase
 
 import cv2
@@ -13,8 +13,6 @@ class CascadeClassifierDetector(DetectorBase):
         self.keys = []
         self.colors = dict()
         self.scale = 50
-        #classifiers['smile'] = [0, get_detectors(classifier_path, '*smile*.xml')]
-        #classifiers['cat'] = [0, get_detectors(classifier_path, '*frontalcatface*.xml')]
 
     def get_idx(self, key):
         return self.classifier_files[key][0]
@@ -85,7 +83,7 @@ class CascadeClassifierDetector(DetectorBase):
             if len(detections):
                 self.detected(frame_idx)
                 self.bounding_boxes = detections
-                if verbose:
+                if log_verbose():
                     for (x, y, w, h, name, color) in self.bounding_boxes:
                         log("[{}] {} {}x{} {}x{} @ {}x{}".format(frame_idx, name, x, y, (x + w), (y + h), frame.shape[1], frame.shape[0]))
 

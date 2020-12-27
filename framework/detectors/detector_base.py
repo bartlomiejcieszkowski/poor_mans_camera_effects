@@ -1,6 +1,9 @@
 import abc
 import queue
 
+from framework.base import log
+
+
 class FrameState(object):
     def __init__(self):
         self.last_detect_idx = 0

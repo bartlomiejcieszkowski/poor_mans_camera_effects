@@ -1,6 +1,31 @@
 import time
 import threading
 import pathlib
+import enum
+
+
+class LogLevel(enum.IntEnum):
+    ERROR = 1
+    WARNING = 2
+    INFO = 3
+    VERBOSE = 4
+
+
+__level = LogLevel.INFO
+
+
+def set_log_level(level: LogLevel):
+    global __level
+    __level = level
+
+
+def get_log_level() -> LogLevel:
+    return __level
+
+
+def log_verbose() -> bool:
+    return __level >= LogLevel.VERBOSE
+
 
 
 def log(fmt, *args):

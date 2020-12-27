@@ -1,23 +1,22 @@
 import cv2
 
-from framework.base import log
-from poor_mans_camera_effects import verbose
+from framework.base import log, log_verbose
 
 
-def get_camera(idx):
-    capture = cv2.VideoCapture(idx)
+def get_camera(idx, api):
+    capture = cv2.VideoCapture(idx, apiPreference=api)
     if not capture.isOpened():
         return None
     return capture
 
 
-def get_available_cameras():
+def get_available_cameras(api):
     idx = 0
     cameras = []
     LIMIT_CONSECUTIVE = 3
     consecutive = 0
     while consecutive < LIMIT_CONSECUTIVE:
-        camera = cv2.VideoCapture(idx)
+        camera = cv2.VideoCapture(idx, apiPreference=api)
         if not camera.isOpened():
             consecutive += 1
             log("{} - fail".format(idx))
@@ -25,7 +24,7 @@ def get_available_cameras():
             read, img = camera.read()
             if read:
                 consecutive = 0
-                if verbose:
+                if log_verbose():
                     camera_width = camera.get(cv2.CAP_PROP_FRAME_WIDTH)
                     camera_height = camera.get(cv2.CAP_PROP_FRAME_HEIGHT)
                     camera_fps = camera.get(cv2.CAP_PROP_FPS)
