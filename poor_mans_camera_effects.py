@@ -7,8 +7,15 @@ import threading
 import time
 
 import click
+import cv2
+import numpy as np
 
 from framework.base import log
+from framework.detectors.cascade_classifier_detector import CascadeClassifierDetector
+from framework.detectors.detector_base import FrameState
+from framework.detectors.yolo_v3_detector import YoloV3Detector
+from framework.filters.base_filters import create_filter_sharpen, create_filter_blur, create_filter_warm, \
+    create_filter_cold, create_filter_blur2
 
 if os.name == 'nt':
     import pyvirtualcam
@@ -161,52 +168,6 @@ def input_loop():
                 log(c)
 
 
-def filter_sharpen(frame, kernel):
-    return cv2.filter2D(frame, -1, kernel)
-
-def create_filter_sharpen():
-    kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
-    return ('sharpen', filter_sharpen, (kernel,))
-
-def filter_blur(frame, size, sigmaX):
-    return cv2.GaussianBlur(frame, size, sigmaX)
-
-def create_filter_blur():
-    return ('blur', filter_blur, ((35, 35), 0))
-
-def filter_blur2(frame, ksize):
-    return cv2.blur(frame, ksize)
-
-def create_filter_blur2():
-    return ('blur2', filter_blur2, ((50, 50),))
-
-import scipy.interpolate
-
-def spread_lookup_table(x, y):
-    return scipy.interpolate.UnivariateSpline(x, y)(range(256))
-
-def filter_warm(frame, increase_lookup_table, decrease_lookup_table):
-    red_channel, green_channel, blue_channel = cv2.split(frame)
-    red_channel = cv2.LUT(red_channel, increase_lookup_table).astype(np.uint8)
-    blue_channel = cv2.LUT(blue_channel, decrease_lookup_table).astype(np.uint8)
-    return cv2.merge((red_channel, green_channel, blue_channel))
-
-def create_filter_warm():
-    increase_lookup_table = spread_lookup_table([0, 64, 128, 256], [0, 80, 160, 256])
-    decrease_lookup_table = spread_lookup_table([0, 64, 128, 256], [0, 50, 100, 256])
-    return ('warm', filter_warm, (increase_lookup_table, decrease_lookup_table))
-
-def filter_cold(frame, increase_lookup_table, decrease_lookup_table):
-    red_channel, green_channel, blue_channel = cv2.split(frame)
-    red_channel = cv2.LUT(red_channel, decrease_lookup_table).astype(np.uint8)
-    blue_channel = cv2.LUT(blue_channel, increase_lookup_table).astype(np.uint8)
-    return cv2.merge((red_channel, green_channel, blue_channel))
-
-def create_filter_cold():
-    increase_lookup_table = spread_lookup_table([0, 64, 128, 256], [0, 80, 160, 256])
-    decrease_lookup_table = spread_lookup_table([0, 64, 128, 256], [0, 50, 100, 256])
-    return ('cold', filter_cold, (increase_lookup_table, decrease_lookup_table))
-
 
 def add_filters(filters):
     filters.append(create_filter_sharpen())
@@ -215,83 +176,6 @@ def add_filters(filters):
     filters.append(create_filter_cold())
 
 
-
-import cv2
-import onnxruntime as ort
-import numpy as np
-import re
-
-class UltrafaceOnnxDectector(DetectorBase):
-    def __init__(self):
-        super().__init__()
-        self.models = None
-        self.scale = 50
-        self.path = None
-        self.detector = None
-
-    def setup(self, path):
-        self.path = path
-        self.models = [0, get_detectors(path, '*.onnx')]
-
-    @staticmethod
-    def get_dimensions(path):
-        width = int(re.match("^.*-(?P<width>[0-9]+)\.onnx$", path).group('width'))
-        return width, (width // 4) * 3
-
-    def main(self):
-        log("Loading ONNX")
-        dimensions = self.get_dimensions(self.path)
-        self.detector = ort.InferenceSession(self.path)
-        input_name = self.detector.get_inputs()[0].name
-
-        while True:
-            frame, frame_idx = self.input.get()
-            f = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            f = cv2.resize(f, dimensions)
-            f_mean = np.array([127, 127, 127])
-            f = (f - f_mean) / 128
-            f = np.transpose(f, [2, 0, 1])
-            f = np.expand_dims(f, axis=0)
-            f = f.astype(np.float32)
-
-            confidences, boxes = self.detector.run(None, {input_name: f})
-            boxes, labels, probs = pre
-
-            blob = cv2.dnn.blobFromImage(frame, 1 / 255.0, (416, 416), swapRB=True, crop=False)
-            net.setInput(blob)
-            start = time.time()
-            layer_outputs = net.forward(ln)
-            end = time.time()
-            log("YOLO processing took {:.6f} seconds".format(end - start))
-            boxes = []
-            confidences = []
-            class_ids = []
-            detections = []
-            for output in layer_outputs:
-                for detection in output:
-                    scores = detection[5:]
-                    class_id = np.argmax(scores)
-                    confidence = scores[class_id]
-
-                    if confidence > g_confidence:
-                        box = detection[0:4] * np.array([W, H, W, H])
-                        (centerX, centerY, width, height) = box.astype("int")
-
-                        x = int(centerX - (width / 2))
-                        y = int(centerY - (height / 2))
-                        boxes.append([x, y, int(width), int(height)])
-                        confidences.append(float(confidence))
-                        class_ids.append(class_id)
-
-            idxs = cv2.dnn.NMSBoxes(boxes, confidences, g_confidence, g_threshold)
-            if len(idxs) > 0:
-                for i in idxs.flatten():
-                    color = [int(c) for c in COLORS[i]]
-                    detections.append((boxes[i][0], boxes[i][1], boxes[i][2], boxes[i][3], "{}: {:.4f}".format(LABELS[i], confidences[i]), color))
-
-            if len(detections):
-                self.detected(frame_idx)
-                self.bounding_boxes = detections
 
 
 
