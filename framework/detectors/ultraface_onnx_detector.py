@@ -3,7 +3,7 @@ import onnxruntime as ort
 import numpy as np
 import re
 
-from framework.base import get_detectors, log
+from framework.base import get_files, log
 from framework.detectors.detector_base import DetectorBase
 
 
@@ -17,7 +17,7 @@ class UltrafaceOnnxDectector(DetectorBase):
 
     def setup(self, path):
         self.path = path
-        self.models = [0, get_detectors(path, '*.onnx')]
+        self.models = [0, get_files(path, '*.onnx')]
 
     @staticmethod
     def get_dimensions(path):

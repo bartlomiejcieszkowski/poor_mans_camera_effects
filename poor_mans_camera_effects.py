@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 
 from framework.base import log
+from framework.camera import get_available_cameras, get_camera
 from framework.detectors.cascade_classifier_detector import CascadeClassifierDetector
 from framework.detectors.detector_base import FrameState
 from framework.detectors.yolo_v3_detector import YoloV3Detector
@@ -54,39 +55,6 @@ frame_filters = [None]
    a) list available cams - allow choosing cam that we will be using
 3. passthrough cam to fakecam
 """
-
-
-
-def get_camera(idx):
-    capture = cv2.VideoCapture(idx)
-    if not capture.isOpened():
-        return None
-    return capture
-
-
-def get_available_cameras():
-    idx = 0
-    cameras = []
-    LIMIT_CONSECUTIVE = 3
-    consecutive = 0
-    while consecutive < LIMIT_CONSECUTIVE:
-        camera = cv2.VideoCapture(idx)
-        if not camera.isOpened():
-            consecutive += 1
-            log("{} - fail".format(idx))
-        else:
-            read, img = camera.read()
-            if read:
-                consecutive = 0
-                if verbose:
-                    camera_width = camera.get(cv2.CAP_PROP_FRAME_WIDTH)
-                    camera_height = camera.get(cv2.CAP_PROP_FRAME_HEIGHT)
-                    camera_fps = camera.get(cv2.CAP_PROP_FPS)
-                    log("[{}] {} x {} @ {}fps".format(idx, camera_width, camera_height, camera_fps))
-                cameras.append(idx)
-            camera.release()
-        idx += 1
-    return cameras
 
 
 def next_classifier(name):
@@ -168,16 +136,11 @@ def input_loop():
                 log(c)
 
 
-
 def add_filters(filters):
     filters.append(create_filter_sharpen())
     filters.append(create_filter_blur())
     filters.append(create_filter_warm())
     filters.append(create_filter_cold())
-
-
-
-
 
 
 def main():

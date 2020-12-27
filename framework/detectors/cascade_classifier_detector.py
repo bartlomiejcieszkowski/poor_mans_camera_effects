@@ -1,4 +1,4 @@
-from framework.base import log, get_detectors
+from framework.base import log, get_files
 from framework.detectors.detector_base import DetectorBase
 
 import cv2
@@ -38,7 +38,7 @@ class CascadeClassifierDetector(DetectorBase):
 
     def setup(self, path):
         for key in self.keys:
-            self.classifier_files[key] = [0, get_detectors(path, '*'+key+'*.xml')]
+            self.classifier_files[key] = [0, get_files(path, '*' + key + '*.xml')]
             self.create_classifier(key)
 
     def main(self):
