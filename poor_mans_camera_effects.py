@@ -14,6 +14,7 @@ from framework.base import log, set_log_level, LogLevel
 from framework.camera import get_available_cameras, get_camera
 from framework.detectors.cascade_classifier_detector import CascadeClassifierDetector
 from framework.detectors.detector_base import FrameState
+from framework.detectors.ultraface_onnx_detector import UltrafaceOnnxDectector
 from framework.detectors.yolo_v3_detector import YoloV3Detector
 from framework.filters.base_filters import create_filter_sharpen, create_filter_blur, create_filter_warm, \
     create_filter_cold, create_filter_blur2
@@ -26,21 +27,21 @@ if os.name == 'nt':
 else:
     import pyfakewebcam
     # modprobe v4l2loopback devices=2 # will create two fake webcam devices
+
     def get_virtual_camera(width, height, fps):
         # naive search
         LIMIT = 10
         idx = 0
         while idx < LIMIT:
             try:
-                camera =  pyfakewebcam.FakeWebcam('/dev/video{}'.format(idx), int(width), int(height))
+                camera = pyfakewebcam.FakeWebcam('/dev/video{}'.format(idx), int(width), int(height))
                 return camera
             except:
                 pass
             idx += 1
         return None
 
-
-#api = cv2.CAP_DSHOW
+# api = cv2.CAP_DSHOW
 api = cv2.CAP_MSMF
 
 capture_idx = 0
@@ -199,6 +200,11 @@ def main():
         cascade_detector.setup(args.haar_cascades)
         detectors.append(cascade_detector)
 
+    if args.onnx and os.path.isdir(args.onnx):
+        onnx_detector = UltrafaceOnnxDectector()
+        onnx_detector.setup(args.onnx)
+        detectors.append(onnx_detector)
+
     onnx = False
     if args.onnx and os.path.isdir(args.onnx):
         onnx = True
@@ -260,6 +266,9 @@ def frame_loop(detectors, frame_state):
 
     while True:
         read, frame = camera.read()
+        if read is False:
+            continue
+
         if interval_s == 0 or (frame_idx % (virtual_camera_fps * interval_s) == 0):
             for detector in detectors:
                 detector.put((frame, frame_idx))
