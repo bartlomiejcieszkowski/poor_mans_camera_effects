@@ -16,8 +16,9 @@ from framework.detectors.cascade_classifier_detector import CascadeClassifierDet
 from framework.detectors.detector_base import FrameState
 from framework.detectors.ultraface_onnx_detector import UltrafaceOnnxDectector
 from framework.detectors.yolo_v3_detector import YoloV3Detector
-from framework.filters.base_filters import create_filter_sharpen, create_filter_blur, create_filter_warm, \
-    create_filter_cold, create_filter_blur2
+from framework.filters.basic.basic_filters import create_filter_sharpen, create_filter_blur, create_filter_warm, \
+    create_filter_cold, create_filter_blur2, Sharpen, Blur, GaussianBlur, Warm, Cold
+from framework.filters.filter_base import FilterManager
 
 if os.name == 'nt':
     import pyvirtualcam
@@ -139,11 +140,12 @@ def input_loop():
                 log(c)
 
 
-def add_filters(filters):
-    filters.append(create_filter_sharpen())
-    filters.append(create_filter_blur())
-    filters.append(create_filter_warm())
-    filters.append(create_filter_cold())
+def add_filters(filter_manager):
+    filter_manager.add(Sharpen)
+    filter_manager.add(Blur)
+    filter_manager.add(GaussianBlur)
+    filter_manager.add(Warm)
+    filter_manager.add(Cold)
 
 
 def main():
@@ -153,7 +155,8 @@ def main():
     global frame_filters
     global filter_idx
 
-    add_filters(frame_filters)
+    filter_manager = FilterManager()
+    add_filters(filter_manager)
 
     ap = argparse.ArgumentParser()
     ap.add_argument('-l', '--list', action='store_true', help='prints available capture devices')
@@ -215,7 +218,7 @@ def main():
         detector.set_frame_state(frame_state)
         threads.append(threading.Thread(target=detector.thread_fun, args=(detector,), name=type(detector).__name__, daemon=True))
 
-    threads.append(threading.Thread(target=frame_loop, args=(detectors, frame_state), name="FrameProcessing", daemon=True))
+    threads.append(threading.Thread(target=frame_loop, args=(detectors, frame_state, filter_manager), name="FrameProcessing", daemon=True))
 
     for thread in threads:
         log("Starting thread: \"{}\"".format(thread.getName()))
@@ -234,7 +237,7 @@ def main():
             return -1
 
 
-def frame_loop(detectors, frame_state):
+def frame_loop(detectors, frame_state, filter_manager):
     frame_idx = 0
     log("Getting camera {}".format(capture_idx))
     camera = get_camera(capture_idx, api)
@@ -274,10 +277,7 @@ def frame_loop(detectors, frame_state):
                 detector.put((frame, frame_idx))
 
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        if frame_filters[filter_idx]:
-            frame_filter = frame_filters[filter_idx]
-            log("Applying filter {}".format(frame_filter[0]))
-            frame = frame_filter[1](frame, *frame_filter[2])
+        frame = filter_manager.current_filter().process(frame)
 
         if (frame_state.get_detect_idx() + auto_blur_delay_frames) < frame_idx:
             if blur_count == 0:
