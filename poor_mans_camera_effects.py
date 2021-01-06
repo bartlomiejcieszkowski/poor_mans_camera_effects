@@ -16,9 +16,8 @@ from framework.detectors.cascade_classifier_detector import CascadeClassifierDet
 from framework.detectors.detector_base import FrameState
 from framework.detectors.ultraface_onnx_detector import UltrafaceOnnxDectector
 from framework.detectors.yolo_v3_detector import YoloV3Detector
-from framework.filters.basic.basic_filters import create_filter_sharpen, create_filter_blur, create_filter_warm, \
-    create_filter_cold, create_filter_blur2, Sharpen, Blur, GaussianBlur, Warm, Cold
-from framework.filters.filter_base import FilterManager
+from framework.filters.basic.basic_filters import Sharpen, Blur, GaussianBlur, Warm, Cold
+from framework.filters.filter_base import FilterManager, AssemblyLine, g_filter_manager
 
 if os.name == 'nt':
     import pyvirtualcam
@@ -141,11 +140,11 @@ def input_loop():
 
 
 def add_filters(filter_manager):
-    filter_manager.add(Sharpen)
-    filter_manager.add(Blur)
-    filter_manager.add(GaussianBlur)
-    filter_manager.add(Warm)
-    filter_manager.add(Cold)
+    g_filter_manager.add(Sharpen)
+    g_filter_manager.add(Blur)
+    g_filter_manager.add(GaussianBlur)
+    g_filter_manager.add(Warm)
+    g_filter_manager.add(Cold)
 
 
 def main():
@@ -154,9 +153,6 @@ def main():
     classifier_path = os.getcwd()
     global frame_filters
     global filter_idx
-
-    filter_manager = FilterManager()
-    add_filters(filter_manager)
 
     ap = argparse.ArgumentParser()
     ap.add_argument('-l', '--list', action='store_true', help='prints available capture devices')
@@ -212,13 +208,15 @@ def main():
     if args.onnx and os.path.isdir(args.onnx):
         onnx = True
 
+    assembly_line = AssemblyLine()
+    threads.append(threading.Thread(target=assembly_line.thread_fun, args=(assembly_line,), name=type(assembly_line).__name__, daemon=True))
     threads.append(threading.Thread(target=input_loop, name="Input", daemon=True))
 
     for detector in detectors:
         detector.set_frame_state(frame_state)
         threads.append(threading.Thread(target=detector.thread_fun, args=(detector,), name=type(detector).__name__, daemon=True))
 
-    threads.append(threading.Thread(target=frame_loop, args=(detectors, frame_state, filter_manager), name="FrameProcessing", daemon=True))
+    # threads.append(threading.Thread(target=frame_loop, args=(detectors, frame_state, filter_manager), name="FrameProcessing", daemon=True))
 
     for thread in threads:
         log("Starting thread: \"{}\"".format(thread.getName()))
@@ -261,11 +259,13 @@ def frame_loop(detectors, frame_state, filter_manager):
 
     auto_blur_delay_s = 10
     auto_blur_delay_frames = auto_blur_delay_s * virtual_camera_fps
-    blur_pack = create_filter_blur2()
 
     rgba_frame = np.zeros((camera_height, camera_width, 4), np.uint8)
     rgba_frame[:, :, 3] = 255
     blur_count = 0
+
+    blur_line = AssemblyLine()
+    blur_line.add_filter(Blur)
 
     while True:
         read, frame = camera.read()
@@ -282,7 +282,7 @@ def frame_loop(detectors, frame_state, filter_manager):
         if (frame_state.get_detect_idx() + auto_blur_delay_frames) < frame_idx:
             if blur_count == 0:
                 log("auto blur")
-            frame = blur_pack[1](frame, *blur_pack[2])
+            frame = blur_line.process(frame)
             blur_count += 1
         else:
             any_detection = False

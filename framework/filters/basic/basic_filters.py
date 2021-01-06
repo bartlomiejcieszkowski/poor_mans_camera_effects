@@ -73,3 +73,22 @@ class Cold(TemperatureBase):
         red_channel = cv2.LUT(red_channel, self.decrease_lut).astype(np.uint8)
         blue_channel = cv2.LUT(blue_channel, self.increase_lut).astype(np.uint8)
         return cv2.merge((red_channel, green_channel, blue_channel))
+
+
+class ColorQuantization(FilterBase):
+    def __init__(self):
+        super().__init__()
+        # max 20 iterations, epsilon
+        self.criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0)
+        self.colors_num = 20
+
+    def process(self, frame):
+        data = np.float32(frame).reshape((-1, 3))
+
+        ret, label, center = cv2.kmeans(data, self.colors_num, None, self.criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
+
+        center = np.uint8(center)
+        result = center[label.flatten()]
+        result = result.reshape(frame.shape)
+        return result
+
