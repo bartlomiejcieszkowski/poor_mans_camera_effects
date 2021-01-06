@@ -32,6 +32,10 @@ def log(fmt, *args):
     print(time.strftime("[%H:%M:%S]", time.localtime()) + "[{:.10}]".format(threading.current_thread().name) + str(fmt), *args)
 
 
+def msg(fmt, *args):
+    print(fmt, *args)
+
+
 def get_files(path, pattern):
     files = []
     for path in pathlib.Path(path).rglob(pattern):

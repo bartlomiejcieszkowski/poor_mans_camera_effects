@@ -5,6 +5,8 @@ from random import choice
 from PySide2.QtCore import Qt, Slot
 from PySide2.QtWidgets import QApplication, QVBoxLayout, QLabel, QPushButton, QWidget
 
+from framework.base import log
+
 
 class FilterBase(metaclass=abc.ABCMeta):
     def __init__(self):
@@ -40,8 +42,10 @@ class FilterManager():
 
     def add(self, filter_class, name=None):
         if name is None:
+            log(filter_class.__name__)
             self.classes[filter_class.__name__] = filter_class
         else:
+            log(name)
             self.classes[name] = filter_class
         self.list.append(filter_class())
 
@@ -49,11 +53,11 @@ class FilterManager():
         return self.list[self.list_idx]
 
     def get_class(self, name):
-        return self.classes.get(name)
-
-
-g_filter_manager = FilterManager()
-
+        log(name)
+        if type(name) is type:
+            return self.classes.get(type(name).__name__)
+        else:
+            return self.classes.get(name)
 
 
 class AssemblyLine(FilterBase):
@@ -77,12 +81,13 @@ class AssemblyLine(FilterBase):
         def button_clicked(self):
             self.text.setText(choice(self.test))
 
-    def __init__(self):
-        super(self).__init__()
+    def __init__(self, filter_manager):
+        super(AssemblyLine, self).__init__()
         self.filters = deque()
+        self.filter_manager = filter_manager
 
     @staticmethod
-    def thread_fun(this):
+    def main_(this):
         this.main()
 
     def main(self):
@@ -95,14 +100,16 @@ class AssemblyLine(FilterBase):
     def process(self, frame):
         elem = frame
         for obj in self.filters:
+            # log("Processing {}".format(type(obj).__name__))
             elem = obj.process(elem)
         return elem
 
     def add_filter(self, name):
-        class_ = g_filter_manager.get_class(name)
+        class_ = self.filter_manager.get_class(name)
         if class_ is None:
+            log("No class {}".format(name))
             return False
-
+        log(name)
         self.filters.append(class_())
 
 

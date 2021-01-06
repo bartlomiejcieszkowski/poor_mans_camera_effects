@@ -41,7 +41,7 @@ class DetectorBase(metaclass=abc.ABCMeta):
             log("queue full")
 
     @staticmethod
-    def thread_fun(detector):
+    def main_(detector):
         detector.main()
 
     def main(self):

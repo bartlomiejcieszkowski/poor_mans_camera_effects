@@ -10,39 +10,16 @@ import click
 import cv2
 import numpy as np
 
-from framework.base import log, set_log_level, LogLevel
+from framework.base import log, set_log_level, LogLevel, msg
 from framework.camera import get_available_cameras, get_camera
 from framework.detectors.cascade_classifier_detector import CascadeClassifierDetector
 from framework.detectors.detector_base import FrameState
 from framework.detectors.ultraface_onnx_detector import UltrafaceOnnxDectector
 from framework.detectors.yolo_v3_detector import YoloV3Detector
 from framework.filters.basic.basic_filters import Sharpen, Blur, GaussianBlur, Warm, Cold
-from framework.filters.filter_base import FilterManager, AssemblyLine, g_filter_manager
+from framework.filters.filter_base import FilterManager, AssemblyLine
+from framework.input import CameraInput
 
-if os.name == 'nt':
-    import pyvirtualcam
-
-    def get_virtual_camera(width, height, fps):
-        return pyvirtualcam.Camera(int(width), int(height), fps, 0)
-else:
-    import pyfakewebcam
-    # modprobe v4l2loopback devices=2 # will create two fake webcam devices
-
-    def get_virtual_camera(width, height, fps):
-        # naive search
-        LIMIT = 10
-        idx = 0
-        while idx < LIMIT:
-            try:
-                camera = pyfakewebcam.FakeWebcam('/dev/video{}'.format(idx), int(width), int(height))
-                return camera
-            except:
-                pass
-            idx += 1
-        return None
-
-# api = cv2.CAP_DSHOW
-api = cv2.CAP_MSMF
 
 capture_idx = 0
 
@@ -140,11 +117,11 @@ def input_loop():
 
 
 def add_filters(filter_manager):
-    g_filter_manager.add(Sharpen)
-    g_filter_manager.add(Blur)
-    g_filter_manager.add(GaussianBlur)
-    g_filter_manager.add(Warm)
-    g_filter_manager.add(Cold)
+    filter_manager.add(Sharpen)
+    filter_manager.add(Blur)
+    filter_manager.add(GaussianBlur)
+    filter_manager.add(Warm)
+    filter_manager.add(Cold)
 
 
 def main():
@@ -171,8 +148,9 @@ def main():
         set_log_level(LogLevel.VERBOSE)
 
     if args.list:
-        cameras = get_available_cameras(api)
-        log(cameras)
+        cameras = get_available_cameras(cv2.CAP_MSMF)
+        msg("Available cameras")
+        msg(cameras)
         return 0
 
     capture_idx = args.capture
@@ -208,15 +186,20 @@ def main():
     if args.onnx and os.path.isdir(args.onnx):
         onnx = True
 
-    assembly_line = AssemblyLine()
-    threads.append(threading.Thread(target=assembly_line.thread_fun, args=(assembly_line,), name=type(assembly_line).__name__, daemon=True))
+    frame_filters = FilterManager()
+    add_filters(frame_filters)
+
+    assembly_line = AssemblyLine(frame_filters)
+    threads.append(threading.Thread(target=assembly_line.main_, args=(assembly_line,), name=type(assembly_line).__name__, daemon=True))
     threads.append(threading.Thread(target=input_loop, name="Input", daemon=True))
 
     for detector in detectors:
         detector.set_frame_state(frame_state)
-        threads.append(threading.Thread(target=detector.thread_fun, args=(detector,), name=type(detector).__name__, daemon=True))
+        threads.append(threading.Thread(target=detector.main_, args=(detector,), name=type(detector).__name__, daemon=True))
 
-    # threads.append(threading.Thread(target=frame_loop, args=(detectors, frame_state, filter_manager), name="FrameProcessing", daemon=True))
+    camera_input = CameraInput(frame_state, frame_filters)
+    camera_input.detectors = detectors
+    threads.append(threading.Thread(target=camera_input.main_, args=(camera_input, ), name="FrameProcessing", daemon=True))
 
     for thread in threads:
         log("Starting thread: \"{}\"".format(thread.getName()))
@@ -233,79 +216,6 @@ def main():
         if any_dead:
             # respawn or die
             return -1
-
-
-def frame_loop(detectors, frame_state, filter_manager):
-    frame_idx = 0
-    log("Getting camera {}".format(capture_idx))
-    camera = get_camera(capture_idx, api)
-    if camera is None:
-        log("Camera[{}] is unavailable".format(capture_idx))
-        return -2
-
-    camera.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
-    camera.set(cv2.CAP_PROP_FPS, 60)
-
-    camera_width = int(camera.get(cv2.CAP_PROP_FRAME_WIDTH))
-    camera_height = int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    camera_fps = int(camera.get(cv2.CAP_PROP_FPS))
-    if camera_fps == 0:
-        camera_fps = 30
-    log("{} x {} @ {}fps".format(camera_width, camera_height, camera_fps))
-
-    virtual_camera_fps = camera_fps // 2
-    virtual_camera = get_virtual_camera(camera_width, camera_height, virtual_camera_fps)
-
-    auto_blur_delay_s = 10
-    auto_blur_delay_frames = auto_blur_delay_s * virtual_camera_fps
-
-    rgba_frame = np.zeros((camera_height, camera_width, 4), np.uint8)
-    rgba_frame[:, :, 3] = 255
-    blur_count = 0
-
-    blur_line = AssemblyLine()
-    blur_line.add_filter(Blur)
-
-    while True:
-        read, frame = camera.read()
-        if read is False:
-            continue
-
-        if interval_s == 0 or (frame_idx % (virtual_camera_fps * interval_s) == 0):
-            for detector in detectors:
-                detector.put((frame, frame_idx))
-
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame = filter_manager.current_filter().process(frame)
-
-        if (frame_state.get_detect_idx() + auto_blur_delay_frames) < frame_idx:
-            if blur_count == 0:
-                log("auto blur")
-            frame = blur_line.process(frame)
-            blur_count += 1
-        else:
-            any_detection = False
-            for detector in detectors:
-                for (x, y, w, h, text, color) in detector.get_bounding_boxes():
-                    any_detection = True
-                    show_detection(frame, x, y, x + w, y + h, color, text)
-
-            if any_detection:
-                blur_count = 0
-
-        rgba_frame[:,:,:3] = frame
-        # rgba_frame[:,:,3] = 255
-        virtual_camera.send(rgba_frame)
-        # virtual_camera.sleep_until_next_frame()
-        frame_idx += 1
-
-    return 0
-
-
-def show_detection(frame, x, y, xw, yh, color, text):
-    cv2.rectangle(frame, (x, y), (xw, yh), color, 2)
-    cv2.putText(frame, text, (x, yh - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2, cv2.LINE_AA)
 
 
 if __name__ == '__main__':
