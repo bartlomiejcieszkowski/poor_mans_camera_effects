@@ -21,33 +21,29 @@ class YoloV3Detector(DetectorBase):
     def setup(self, path):
         self.path = path
 
-
-
-    def main(self):
-        log("Loading YOLO")
-        self.net = cv2.dnn.readNetFromDarknet(os.path.join(self.path, "yolov3.cfg"),
-                                         os.path.join(self.path, "yolov3.weights"))
-        self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
-
-        self.ln = self.net.getLayerNames()
-        log("unconnected layers")
-        for i in self.net.getUnconnectedOutLayers():
-            log(i)
-            log(self.ln[i[0] - 1])
-        self.ln = [self.ln[i[0] - 1] for i in self.net.getUnconnectedOutLayers()]
-
-        self.LABELS = open(os.path.join(self.path, 'coco.names')).read().strip().split("\n")
-        self.COLORS = np.random.randint(0, 255, size=(len(self.LABELS), 3), dtype="uint8")
-
-        super().main()
-
     def process(self, frame, frame_idx):
+        log("Loading YOLO")
+        net = cv2.dnn.readNetFromDarknet(
+            os.path.join(self.path, "yolov3.cfg"),
+            os.path.join(self.path, "yolov3.weights"))
+        net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+
+        ln = net.getLayerNames()
+        log("unconnected layers")
+        for i in net.getUnconnectedOutLayers():
+            log(i)
+            log(ln[i[0] - 1])
+        ln = [ln[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+
+        LABELS = open(os.path.join(self.path, 'coco.names')).read().strip().split("\n")
+        COLORS = np.random.randint(0, 255, size=(len(LABELS), 3), dtype="uint8")
+
         (H, W) = frame.shape[:2]
 
         blob = cv2.dnn.blobFromImage(frame, 1 / 255.0, (416, 416), swapRB=True, crop=False)
-        self.net.setInput(blob)
+        net.setInput(blob)
         start = time.time()
-        layer_outputs = self.net.forward(self.ln)
+        layer_outputs = net.forward(ln)
         end = time.time()
         log("YOLO processing took {:.6f} seconds".format(end - start))
         boxes = []
@@ -73,8 +69,10 @@ class YoloV3Detector(DetectorBase):
         idxs = cv2.dnn.NMSBoxes(boxes, confidences, self.confidence, self.threshold)
         if len(idxs) > 0:
             for i in idxs.flatten():
-                color = [int(c) for c in self.COLORS[i]]
-                detections.append((boxes[i][0], boxes[i][1], boxes[i][2], boxes[i][3], "{}: {:.4f}".format(self.LABELS[i], confidences[i]), color))
+                color = [int(c) for c in COLORS[i]]
+                detections.append((
+                    boxes[i][0], boxes[i][1], boxes[i][2], boxes[i][3],
+                    "{}: {:.4f}".format(LABELS[i], confidences[i]), color))
 
         if len(detections):
             self.detected(frame_idx)

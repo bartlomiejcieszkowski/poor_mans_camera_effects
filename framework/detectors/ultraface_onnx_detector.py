@@ -9,7 +9,7 @@ from framework.dependencies.demo import scale
 from framework.detectors.detector_base import DetectorBase
 
 
-class UltrafaceOnnxDectector(DetectorBase):
+class UltrafaceOnnxDetector(DetectorBase):
     def __init__(self):
         super().__init__()
         self.models = None
@@ -17,8 +17,6 @@ class UltrafaceOnnxDectector(DetectorBase):
         self.detector = None
         self.threshold = 0.5
         self.color = (255, 128, 0)
-
-        self.input_name = None
 
     def setup(self, path):
         self.path = path
@@ -30,34 +28,31 @@ class UltrafaceOnnxDectector(DetectorBase):
     @staticmethod
     def get_dimensions(path):
         log(path)
-        width = int(re.match("^.*[-_](?P<width>[0-9]+)\.onnx$", path).group('width'))
+        width = int(re.match("^.*[-_](?P<width>[0-9]+)\\.onnx$", path).group('width'))
         return width, (width // 4) * 3
 
-    def main(self):
+    def process(self, frame, frame_idx):
         model = self.get_current_model()
         log("Loading ONNX - {}".format(model))
-        self.dimensions = self.get_dimensions(model)
-        self.detector = ort.InferenceSession(model)
-        self.input_name = self.detector.get_inputs()[0].name
+        dimensions = self.get_dimensions(model)
+        detector = ort.InferenceSession(model)
+        input_name = detector.get_inputs()[0].name
 
-        super().main()
-
-    def process(self, frame, frame_idx):
         f = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        f = cv2.resize(f, self.dimensions)
+        f = cv2.resize(f, dimensions)
         f_mean = np.array([127, 127, 127])
         f = (f - f_mean) / 128
         f = np.transpose(f, [2, 0, 1])
         f = np.expand_dims(f, axis=0)
         f = f.astype(np.float32)
 
-        confidences, boxes = self.detector.run(None, {self.input_name: f})
+        confidences, boxes = detector.run(None, {input_name: f})
         boxes, labels, probs = predict(frame.shape[1], frame.shape[0], confidences, boxes, self.threshold)
 
         detections = []
         for i in range(boxes.shape[0]):
             box = boxes[i, :]
-            #scale(boxes[i, :])
+            scale(boxes[i, :])
             detections.append((box[0], box[1], box[2] - box[0], box[3] - box[1],
                                "{}: {:.4f}".format(labels[i], probs[i]), self.color))
 

@@ -1,10 +1,5 @@
 import abc
 from collections import deque
-from random import choice
-
-from PySide2.QtCore import Qt, Slot
-from PySide2.QtWidgets import QApplication, QVBoxLayout, QLabel, QPushButton, QWidget
-
 from framework.base import log
 
 
@@ -33,7 +28,7 @@ class NoFilter(FilterBase):
         return frame
 
 
-class FilterManager():
+class FilterManager(object):
     def __init__(self):
         self.classes = dict()
         self.list = []
@@ -61,41 +56,10 @@ class FilterManager():
 
 
 class AssemblyLine(FilterBase):
-    class Widget(QWidget):
-        def __init__(self):
-            QWidget.__init__(self)
-            #super().__init__(self)
-            self.test = ["1", "Test"]
-            self.button = QPushButton("Click")
-            self.text = QLabel("TTTT")
-            self.text.setAlignment(Qt.AlignCenter)
-
-            self.layout = QVBoxLayout()
-            self.layout.addWidget(self.text)
-            self.layout.addWidget(self.button)
-            self.setLayout(self.layout)
-
-            self.button.clicked.connect(self.button_clicked)
-
-        @Slot()
-        def button_clicked(self):
-            self.text.setText(choice(self.test))
-
     def __init__(self, filter_manager):
         super(AssemblyLine, self).__init__()
         self.filters = deque()
         self.filter_manager = filter_manager
-
-    @staticmethod
-    def main_(this):
-        this.main()
-
-    def main(self):
-        app = QApplication()
-        window = AssemblyLine.Widget()
-        window.resize(800, 600)
-        window.show()
-        app.exec_()
 
     def process(self, frame):
         elem = frame
@@ -111,6 +75,3 @@ class AssemblyLine(FilterBase):
             return False
         log(name)
         self.filters.append(class_())
-
-
-

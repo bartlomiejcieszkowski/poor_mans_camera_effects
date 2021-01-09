@@ -1,3 +1,4 @@
+import abc
 import time
 import threading
 import pathlib
@@ -29,7 +30,8 @@ def log_verbose() -> bool:
 
 
 def log(fmt, *args):
-    print(time.strftime("[%H:%M:%S]", time.localtime()) + "[{:.10}]".format(threading.current_thread().name) + str(fmt), *args)
+    print(time.strftime("[%H:%M:%S]", time.localtime())
+          + "[{:<10.10}] ".format(threading.current_thread().name) + str(fmt), *args)
 
 
 def msg(fmt, *args):
@@ -42,6 +44,25 @@ def get_files(path, pattern):
         files.append(path.as_posix())
         log(path.as_posix())
     return files
+
+
+class Threadable(object, metaclass=abc.ABCMeta):
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def main_(this):
+        this.main()
+
+    @abc.abstractmethod
+    def main(self):
+        raise NotImplementedError
+
+    def create_thread(self, name: str = None, daemon: bool = True) -> threading.Thread:
+        return threading.Thread(
+            target=self.main_, args=(self,),
+            name=(name if name is not None else type(self).__name__),
+            daemon=daemon)
 
 
 class TimeMeasurements:
@@ -64,7 +85,7 @@ class TimeMeasurements:
     def log_header(self):
         self.print_method(self.format_string)
 
-    def __init__(self, log_method=log, log_mode=LogMode.HUMAN):
+    def __init__(self, log_mode=LogMode.HUMAN):
         self.measurements = deque()
         self.measure_method = time.perf_counter_ns
         self.processing_time = time.process_time_ns

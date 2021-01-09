@@ -10,10 +10,13 @@ def get_camera(idx, api):
     return capture
 
 
+LIMIT_CONSECUTIVE = 3
+
+
 def get_available_cameras(api):
     idx = 0
     cameras = []
-    LIMIT_CONSECUTIVE = 3
+
     consecutive = 0
     while consecutive < LIMIT_CONSECUTIVE:
         camera = cv2.VideoCapture(idx, apiPreference=api)

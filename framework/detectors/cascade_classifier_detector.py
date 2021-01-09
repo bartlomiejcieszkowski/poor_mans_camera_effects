@@ -2,7 +2,6 @@ from framework.base import log, get_files, log_verbose, TimeMeasurements
 from framework.detectors.detector_base import DetectorBase
 
 import cv2
-import time
 
 
 class CascadeClassifierDetector(DetectorBase):
@@ -76,10 +75,17 @@ class CascadeClassifierDetector(DetectorBase):
                                       name, self.colors[name]))
             else:
                 for (x, y, w, h) in scaled_detections:
-                    detections.append((x * 100 // self.scale, y * 100 // self.scale, w * 100 // self.scale, h * 100 // self.scale, name, self.colors[name]))
+                    detections.append((
+                        x * 100 // self.scale,
+                        y * 100 // self.scale,
+                        w * 100 // self.scale,
+                        h * 100 // self.scale,
+                        name, self.colors[name]))
+
         if len(detections):
             self.detected(frame_idx)
             self.bounding_boxes = detections
             if log_verbose():
                 for (x, y, w, h, name, color) in self.bounding_boxes:
-                    log("[{}] {} {}x{} {}x{} @ {}x{}".format(frame_idx, name, x, y, (x + w), (y + h), frame.shape[1], frame.shape[0]))
+                    log("[{}] {} {}x{} {}x{} @ {}x{}".format(
+                        frame_idx, name, x, y, (x + w), (y + h), frame.shape[1], frame.shape[0]))

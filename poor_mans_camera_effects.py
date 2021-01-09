@@ -8,13 +8,12 @@ import time
 
 import click
 import cv2
-import numpy as np
 
 from framework.base import log, set_log_level, LogLevel, msg
-from framework.camera import get_available_cameras, get_camera
+from framework.camera import get_available_cameras
 from framework.detectors.cascade_classifier_detector import CascadeClassifierDetector
 from framework.detectors.detector_base import FrameState
-from framework.detectors.ultraface_onnx_detector import UltrafaceOnnxDectector
+from framework.detectors.ultraface_onnx_detector import UltrafaceOnnxDetector
 from framework.detectors.yolo_v3_detector import YoloV3Detector
 from framework.filters.basic.basic_filters import Sharpen, Blur, GaussianBlur, Warm, Cold
 from framework.filters.filter_base import FilterManager, AssemblyLine
@@ -46,6 +45,7 @@ def next_classifier(name):
     classifier_paths[0] = new_idx
     cascade_classifiers_paths[name] = classifier_paths
 
+
 def change_interval(change):
     global interval_s
     if change < 0:
@@ -57,9 +57,11 @@ def change_interval(change):
         interval_s += change
     log("interval: {}s".format(interval_s))
 
+
 def change_filter(increment):
     global filter_idx
     filter_idx = (filter_idx + increment) % len(frame_filters)
+
 
 def input_loop():
     input_help = "f, g, h, j, t, i, o, h, ` "
@@ -71,8 +73,8 @@ def input_loop():
     while True:
         c = click.getchar()
         if c == '`':
-              input_lock = not input_lock
-              log("Input Lock? {}".format(input_lock))
+            input_lock = not input_lock
+            log("Input Lock? {}".format(input_lock))
         else:
             if input_lock:
                 pass
@@ -125,9 +127,6 @@ def add_filters(filter_manager):
 
 
 def main():
-    ls_mode = False
-    force_hq = False
-    classifier_path = os.getcwd()
     global frame_filters
     global filter_idx
 
@@ -142,8 +141,6 @@ def main():
 
     args = ap.parse_args()
 
-
-
     if args.verbose:
         set_log_level(LogLevel.VERBOSE)
 
@@ -152,9 +149,6 @@ def main():
         msg("Available cameras")
         msg(cameras)
         return 0
-
-    capture_idx = args.capture
-    force_hq = args.hq
 
     log(args)
 
@@ -172,34 +166,30 @@ def main():
         cascade_detector = CascadeClassifierDetector()
         cascade_detector.add_key('frontalface', (0, 0, 255))
         cascade_detector.add_key('profileface', (0, 0, 255))
-        #cascade_detector.add_key('smile', (255, 0, 0))
-        #cascade_detector.add_key('cat', (0, 255, 0))
+        # cascade_detector.add_key('smile', (255, 0, 0))
+        # cascade_detector.add_key('cat', (0, 255, 0))
         cascade_detector.setup(args.haar_cascades)
         detectors.append(cascade_detector)
 
     if args.onnx and os.path.isdir(args.onnx):
-        onnx_detector = UltrafaceOnnxDectector()
+        onnx_detector = UltrafaceOnnxDetector()
         onnx_detector.setup(args.onnx)
         detectors.append(onnx_detector)
 
-    onnx = False
-    if args.onnx and os.path.isdir(args.onnx):
-        onnx = True
+    filter_manager = FilterManager()
+    add_filters(filter_manager)
 
-    frame_filters = FilterManager()
-    add_filters(frame_filters)
-
-    assembly_line = AssemblyLine(frame_filters)
-    threads.append(threading.Thread(target=assembly_line.main_, args=(assembly_line,), name=type(assembly_line).__name__, daemon=True))
-    threads.append(threading.Thread(target=input_loop, name="Input", daemon=True))
+    threads.append(threading.Thread(target=input_loop,
+                                    name="Input", daemon=True))
 
     for detector in detectors:
         detector.set_frame_state(frame_state)
-        threads.append(threading.Thread(target=detector.main_, args=(detector,), name=type(detector).__name__, daemon=True))
+        threads.append(detector.create_thread())
 
-    camera_input = CameraInput(frame_state, frame_filters)
+    camera_input = CameraInput(frame_state=frame_state, filter_manager=filter_manager, capture_idx=args.capture)
     camera_input.detectors = detectors
-    threads.append(threading.Thread(target=camera_input.main_, args=(camera_input, ), name="FrameProcessing", daemon=True))
+
+    threads.append(camera_input.create_thread(name="FrameProcessing"))
 
     for thread in threads:
         log("Starting thread: \"{}\"".format(thread.getName()))

@@ -3,7 +3,7 @@ import os
 import cv2
 import numpy as np
 
-from framework.base import log
+from framework.base import log, Threadable
 from framework.camera import get_camera
 from framework.filters.basic.basic_filters import Blur
 from framework.filters.filter_base import AssemblyLine
@@ -32,7 +32,7 @@ else:
         return None
 
 
-class CameraInput():
+class CameraInput(Threadable):
     def __init__(self, frame_state, filter_manager, capture_idx=0, capture_api=cv2.CAP_MSMF, capture_params=(1920, 1080, 60)):
         # cv2.CAP_DSHOW
         # cv2.CAP_MSMF
@@ -44,10 +44,6 @@ class CameraInput():
         self.detectors = []
         self.frame_state = frame_state
         self.filter_manager = filter_manager
-
-    @staticmethod
-    def main_(this):
-        this.main()
 
     @staticmethod
     def show_detection(frame, x, y, xw, yh, color, text):

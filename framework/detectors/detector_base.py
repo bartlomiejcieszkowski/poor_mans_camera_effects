@@ -1,7 +1,7 @@
 import abc
 import queue
 
-from framework.base import log, TimeMeasurements
+from framework.base import log, TimeMeasurements, Threadable
 
 
 class FrameState(object):
@@ -15,8 +15,9 @@ class FrameState(object):
         return self.last_detect_idx
 
 
-class DetectorBase(metaclass=abc.ABCMeta):
+class DetectorBase(Threadable, metaclass=abc.ABCMeta):
     def __init__(self):
+        super(DetectorBase, self).__init__()
         self.input = queue.Queue(maxsize=1)
         self.bounding_boxes = []
         self.frame_state = None
@@ -39,10 +40,6 @@ class DetectorBase(metaclass=abc.ABCMeta):
             self.input.put(item, block=False)
         except queue.Full:
             log("queue full")
-
-    @staticmethod
-    def main_(detector):
-        detector.main()
 
     def main(self):
         while True:
