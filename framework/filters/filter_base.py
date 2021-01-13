@@ -2,7 +2,6 @@ import abc
 from collections import deque
 from framework.base import log
 
-
 class FilterBase(metaclass=abc.ABCMeta):
     def __init__(self):
         pass

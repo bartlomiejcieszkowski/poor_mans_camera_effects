@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 
 import cv2
 import numpy as np
@@ -33,7 +35,7 @@ else:
 
 
 class CameraInput(Threadable):
-    def __init__(self, frame_state, filter_manager, capture_idx=0, capture_api=cv2.CAP_MSMF, capture_params=(1920, 1080, 60)):
+    def __init__(self, frame_state, filter_manager, capture_idx=0, capture_api=cv2.CAP_MSMF, capture_params=(1920, 1080, 60), open_player=False):
         # cv2.CAP_DSHOW
         # cv2.CAP_MSMF
         self.frame_idx = 0
@@ -44,11 +46,20 @@ class CameraInput(Threadable):
         self.detectors = []
         self.frame_state = frame_state
         self.filter_manager = filter_manager
+        self.open_player = open_player
+        self.player_process = None
 
     @staticmethod
     def show_detection(frame, x, y, xw, yh, color, text):
         cv2.rectangle(frame, (x, y), (xw, yh), color, 2)
         cv2.putText(frame, text, (x, yh - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2, cv2.LINE_AA)
+
+    def add_interval(self, val):
+        interval_s = self.detector_interval_s + val
+        if interval_s < 0:
+            interval_s = 0
+        log("interval: {}s".format(interval_s))
+        self.detector_interval_s = interval_s
 
     def main(self):
         self.frame_idx = 0
@@ -82,9 +93,22 @@ class CameraInput(Threadable):
         blur_line = AssemblyLine(self.filter_manager)
         blur_line.add_filter("Blur")
 
+        failed_read = 0
+        failed_read_limit = 100
+
+
+        if self.open_player:
+            execute_path = [ os.path.abspath("c:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe") ]
+            execute_args = "dshow:// :dshow-vdev=OBS-Camera :dshow-adev= :live-caching=0".split()
+            self.player_process = subprocess.Popen(execute_path + execute_args)
+
         while True:
             read, frame = camera.read()
             if read is False:
+                failed_read += 1
+                if failed_read >= failed_read_limit:
+                    log("Failed reads {} - breaking".format(failed_read))
+                    break
                 continue
 
             if self.detector_interval_s == 0 or (self.frame_idx % (virtual_camera_fps * self.detector_interval_s) == 0):

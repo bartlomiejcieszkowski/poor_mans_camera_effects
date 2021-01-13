@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 from scipy import interpolate
 
-from framework.filters.filter_base import FilterBase
+from framework.filters.filter_base import FilterBase, FilterManager
 
 
 class Sharpen(FilterBase):
@@ -92,3 +92,10 @@ class ColorQuantization(FilterBase):
         result = result.reshape(frame.shape)
         return result
 
+
+def add_default_filters(filter_manager: FilterManager):
+    filter_manager.add(Sharpen)
+    filter_manager.add(Blur)
+    filter_manager.add(GaussianBlur)
+    filter_manager.add(Warm)
+    filter_manager.add(Cold)

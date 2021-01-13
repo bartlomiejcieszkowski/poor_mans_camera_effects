@@ -14,6 +14,10 @@ class CascadeClassifierDetector(DetectorBase):
         self.scale = 50
         self.time_measurements = TimeMeasurements()
 
+    def next_classifier(self, name):
+        self.add_idx(name, 1)
+        self.create_classifier(name)
+
     def get_idx(self, key):
         return self.classifier_files[key][0]
 
