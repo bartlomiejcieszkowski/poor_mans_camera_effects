@@ -75,15 +75,17 @@ class Cold(TemperatureBase):
         return cv2.merge((red_channel, green_channel, blue_channel))
 
 
+# this is too slow - takes 4s
 class ColorQuantization(FilterBase):
     def __init__(self):
         super().__init__()
         # max 20 iterations, epsilon
         self.criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0)
-        self.colors_num = 20
+        self.colors_num = 8
 
     def process(self, frame):
-        data = np.float32(frame).reshape((-1, 3))
+        data = frame.reshape((-1, 10))
+        data = np.float32(data)
 
         ret, label, center = cv2.kmeans(data, self.colors_num, None, self.criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
 
@@ -99,3 +101,4 @@ def add_default_filters(filter_manager: FilterManager):
     filter_manager.add(GaussianBlur)
     filter_manager.add(Warm)
     filter_manager.add(Cold)
+    # filter_manager.add(ColorQuantization)
