@@ -57,8 +57,8 @@ class Warm(TemperatureBase):
 
     def process(self, frame):
         red_channel, green_channel, blue_channel = cv2.split(frame)
-        red_channel = cv2.LUT(red_channel, self.increase_lookup_table).astype(np.uint8)
-        blue_channel = cv2.LUT(blue_channel, self.decrease_lookup_table).astype(np.uint8)
+        red_channel = cv2.LUT(red_channel, self.increase_lut).astype(np.uint8)
+        blue_channel = cv2.LUT(blue_channel, self.decrease_lut).astype(np.uint8)
         return cv2.merge((red_channel, green_channel, blue_channel))
 
 
