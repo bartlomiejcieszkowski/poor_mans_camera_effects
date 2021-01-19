@@ -19,6 +19,27 @@ class FilterBase(metaclass=abc.ABCMeta):
         return type(self).__name__
 
 
+class FilterHasModes(metaclass=abc.ABCMeta):
+    def __init__(self):
+        pass
+
+    @abc.abstractmethod
+    def mode_next(self):
+        pass
+
+    @abc.abstractmethod
+    def mode_prev(self):
+        pass
+
+    @abc.abstractmethod
+    def mode_change(self, mode_int):
+        pass
+
+    @abc.abstractmethod
+    def mode_invalid(self):
+        pass
+
+
 class NoFilter(FilterBase):
     def __init__(self):
         super().__init__()
@@ -74,3 +95,12 @@ class AssemblyLine(FilterBase):
             return False
         log(name)
         self.filters.append(class_())
+
+    def to_string(self):
+        text = "-> "
+        if len(self.filters):
+            for obj in self.filters:
+                text += type(obj).__name__ + " -> "
+        else:
+            text += "NOOP -> "
+        return text

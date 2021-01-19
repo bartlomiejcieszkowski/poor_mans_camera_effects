@@ -1,10 +1,11 @@
 from abc import ABC
+from enum import IntEnum
 
 import cv2
 import numpy as np
 from scipy import interpolate
 
-from framework.filters.filter_base import FilterBase, FilterManager
+from framework.filters.filter_base import FilterBase, FilterManager, FilterHasModes
 
 
 class Sharpen(FilterBase):
@@ -95,6 +96,48 @@ class ColorQuantization(FilterBase):
         return result
 
 
+class CannyEdgeDetection(FilterBase, FilterHasModes):
+    class Mode(IntEnum):
+        NONE = 0
+        COMBINE = 1
+        EDGES = 2
+        INVALID = 3
+
+    def __init__(self):
+        super().__init__()
+        self.threshold1 = 100
+        self.threshold2 = 200
+        self.mode = self.Mode.COMBINE
+
+    def process_combine(self, frame):
+        result = cv2.Canny(frame, self.threshold1, self.threshold2)
+        combined = np.bitwise_or(frame, result[:, :, np.newaxis])
+        return combined
+
+    def process_edges(self, frame):
+        result = cv2.Canny(frame, self.threshold1, self.threshold2)
+        return result[:, :, np.newaxis]
+
+    def process(self, frame):
+        if self.mode is self.Mode.COMBINE:
+            return self.process_combine(frame)
+        elif self.mode is self.Mode.EDGES:
+            return self.process_edges(frame)
+        return frame
+
+    def mode_next(self):
+        self.mode = self.Mode((self.mode + 1) % self.Mode.INVALID)
+
+    def mode_prev(self):
+        self.mode = self.Mode((self.mode - 1) % self.Mode.INVALID)
+
+    def mode_change(self, mode_int):
+        mode = self.Mode(mode_int)
+
+    def mode_invalid(self):
+        return self.Mode.INVALID
+
+
 def add_default_filters(filter_manager: FilterManager):
     filter_manager.add(Sharpen)
     filter_manager.add(Blur)
@@ -102,3 +145,4 @@ def add_default_filters(filter_manager: FilterManager):
     filter_manager.add(Warm)
     filter_manager.add(Cold)
     # filter_manager.add(ColorQuantization)
+    filter_manager.add(CannyEdgeDetection)
