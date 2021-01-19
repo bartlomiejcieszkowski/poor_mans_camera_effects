@@ -94,8 +94,9 @@ class Application(object):
 
         self.threads.append(self.camera_input.create_thread(name="FrameProcessing"))
 
-        self.ui_thread = UiThread()
-        self.threads.append(self.ui_thread.create_thread())
+        # TODO: enable ui thread once there is any ui
+        # self.ui_thread = UiThread()
+        # self.threads.append(self.ui_thread.create_thread())
 
         for thread in self.threads:
             log("Starting thread: \"{}\"".format(thread.getName()))
