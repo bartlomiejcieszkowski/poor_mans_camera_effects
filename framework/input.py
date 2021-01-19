@@ -42,7 +42,8 @@ class CameraInput(Threadable):
         self.capture_idx = capture_idx
         self.capture_api = capture_api
         self.capture_params = capture_params
-        self.detector_interval_s = 5
+        self.detector_interval_s = 2
+        self.auto_blur_delay_s = 10
         self.detectors = []
         self.frame_state = frame_state
         self.filter_manager = filter_manager
@@ -83,8 +84,7 @@ class CameraInput(Threadable):
         virtual_camera_fps = camera_fps // 2
         virtual_camera = get_virtual_camera(camera_width, camera_height, virtual_camera_fps)
 
-        auto_blur_delay_s = 10
-        auto_blur_delay_frames = auto_blur_delay_s * virtual_camera_fps
+        auto_blur_delay_frames = self.auto_blur_delay_s * virtual_camera_fps
 
         rgba_frame = np.zeros((camera_height, camera_width, 4), np.uint8)
         rgba_frame[:, :, 3] = 255
@@ -92,6 +92,14 @@ class CameraInput(Threadable):
 
         blur_line = AssemblyLine(self.filter_manager)
         blur_line.add_filter("Blur")
+
+        # filters here would be applied even before detectors
+        pre_process = AssemblyLine(self.filter_manager)
+
+        # filters here would be applied last
+        post_process = AssemblyLine(self.filter_manager)
+        # post_process.add_filter("ColorQuantization")
+        post_process.add_filter("CannyEdgeDetection")
 
         failed_read = 0
         failed_read_limit = 100
@@ -102,6 +110,9 @@ class CameraInput(Threadable):
             execute_args = "dshow:// :dshow-vdev=OBS-Camera :dshow-adev= :live-caching=0".split()
             self.player_process = subprocess.Popen(execute_path + execute_args)
 
+        log("pre_process: {}".format(pre_process.to_string()))
+        log("post_process: {}".format(post_process.to_string()))
+
         while True:
             read, frame = camera.read()
             if read is False:
@@ -110,6 +121,8 @@ class CameraInput(Threadable):
                     log("Failed reads {} - breaking".format(failed_read))
                     break
                 continue
+
+            frame = pre_process.process(frame)
 
             if self.detector_interval_s == 0 or (self.frame_idx % (virtual_camera_fps * self.detector_interval_s) == 0):
                 for detector in self.detectors:
@@ -132,6 +145,8 @@ class CameraInput(Threadable):
 
                 if any_detection:
                     blur_count = 0
+
+            frame = post_process.process(frame)
 
             rgba_frame[:, :, :3] = frame
             # rgba_frame[:,:,3] = 255
