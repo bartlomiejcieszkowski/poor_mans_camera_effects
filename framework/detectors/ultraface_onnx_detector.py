@@ -15,7 +15,7 @@ class UltrafaceOnnxDetector(DetectorBase):
         self.models = None
         self.path = None
 
-        self.threshold = 0.5
+        self.threshold = 0.9
         self.color = (255, 128, 0)
 
         self.model = None
