@@ -40,6 +40,7 @@ class UltrafaceOnnxDetector(DetectorBase):
         self.model = self.get_current_model()
         log("Loading ONNX - {}".format(self.model))
         self.dimensions = self.get_dimensions(self.model)
+        ort.set_default_logger_severity(4)
         self.detector = ort.InferenceSession(self.model)
         self.input_name = self.detector.get_inputs()[0].name
 
