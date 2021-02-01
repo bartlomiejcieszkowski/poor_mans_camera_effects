@@ -103,19 +103,22 @@ class CannyEdgeDetection(FilterBase, FilterHasModes):
         EDGES = 2
         INVALID = 3
 
+
     def __init__(self):
         super().__init__()
-        self.threshold1 = 100
-        self.threshold2 = 200
+        self.threshold = [100, 200]
         self.mode = self.Mode.COMBINE
 
+    def add_thresh(self, idx, val):
+        self.threshold[idx] = self.threshold[idx] + val
+
     def process_combine(self, frame):
-        result = cv2.Canny(frame, self.threshold1, self.threshold2)
+        result = cv2.Canny(frame, self.threshold[0], self.threshold[1])
         combined = np.bitwise_or(frame, result[:, :, np.newaxis])
         return combined
 
     def process_edges(self, frame):
-        result = cv2.Canny(frame, self.threshold1, self.threshold2)
+        result = cv2.Canny(frame, self.threshold[0], self.threshold[1])
         return result[:, :, np.newaxis]
 
     def process(self, frame):

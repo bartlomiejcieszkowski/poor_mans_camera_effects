@@ -83,6 +83,8 @@ class CameraInput(Threadable):
 
         virtual_camera_fps = camera_fps // 2
         virtual_camera = get_virtual_camera(camera_width, camera_height, virtual_camera_fps)
+        # get rid of warning
+        virtual_camera._fps_warning_printed = True
 
         auto_blur_delay_frames = self.auto_blur_delay_s * virtual_camera_fps
 

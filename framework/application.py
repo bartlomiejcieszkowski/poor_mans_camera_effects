@@ -8,7 +8,7 @@ from typing import Text, NoReturn
 import click
 import cv2
 
-from framework.base import set_log_level, LogLevel, msg, log, Threadable
+from framework.base import set_log_level, LogLevel, msg, log, Threadable, log_file
 from framework.camera import get_available_cameras
 from framework.detectors.cascade_classifier_detector import CascadeClassifierDetector
 from framework.detectors.detector_base import FrameState
@@ -18,6 +18,7 @@ from framework.filters.basic.basic_filters import add_default_filters
 from framework.filters.filter_base import FilterManager
 from framework.gui import UiThread
 from framework.input import CameraInput
+from framework.tui import TuiThread
 
 
 class Application(object):
@@ -30,6 +31,7 @@ class Application(object):
         ap.add_argument('--haar-cascades', default=None, type=str)
         ap.add_argument('--yolo', default=None, type=str)
         ap.add_argument('--onnx', default=None, type=str)
+        ap.add_argument('--log', default='pmce.log', type=str)
 
         self.args = ap.parse_args(argv[1:])
         self.frame_state = None
@@ -48,6 +50,8 @@ class Application(object):
     def run(self):
         if self.args.verbose:
             set_log_level(LogLevel.VERBOSE)
+
+        log_file(self.args.log)
 
         if self.args.list:
             cameras = get_available_cameras(cv2.CAP_MSMF)
@@ -81,7 +85,7 @@ class Application(object):
         self.filter_manager = FilterManager()
         add_default_filters(self.filter_manager)
 
-        self.input_thread = InputTread(self)
+        self.input_thread = TuiThread(self)
 
         self.threads.append(self.input_thread.create_thread())
 
@@ -115,35 +119,3 @@ class Application(object):
                 return -1
 
 
-class InputTread(Threadable):
-    def __init__(self, app: Application):
-        super().__init__()
-        self.app = app
-
-    def main(self):
-        input_help = "`, G, g, i, o, h, Q"
-        log("Input thread started")
-        input_lock = False
-        while True:
-            c = click.getchar()
-            if c == '`':
-                input_lock = not input_lock
-                log("Input Lock? {}".format(input_lock))
-            else:
-                if input_lock:
-                    pass
-                elif c == 'G':
-                    self.app.cascade_detector.next_classifier('frontalface')
-                elif c == 'g':
-                    self.app.cascade_detector.next_classifier('profileface')
-                elif c == 'i':
-                    self.app.camera_input.add_interval(-1)
-                elif c == 'o':
-                    self.app.camera_input.add_interval(1)
-                elif c == 'h':
-                    log(input_help)
-                elif c == 'Q':
-                    log("Exit")
-                    exit(0)
-                else:
-                    log(c)
