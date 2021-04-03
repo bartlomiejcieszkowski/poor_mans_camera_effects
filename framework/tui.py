@@ -49,9 +49,9 @@ class TuiThread(Threadable):
                 elif c == 'g':
                     self.app.cascade_detector.next_classifier('profileface')
                 elif c == 'i':
-                    self.app.camera_input.add_interval(-1)
+                    self.app.input.add_interval(-1)
                 elif c == 'o':
-                    self.app.camera_input.add_interval(1)
+                    self.app.input.add_interval(1)
                 elif c == 'h':
                     log(input_help)
                 elif c == 'Q':

@@ -17,7 +17,7 @@ from framework.detectors.yolo_v3_detector import YoloV3Detector
 from framework.filters.basic.basic_filters import add_default_filters
 from framework.filters.filter_base import FilterManager
 from framework.gui import UiThread
-from framework.input import CameraInput
+from framework.input import CameraInput, FileInput
 from framework.tui import TuiThread
 
 
@@ -26,19 +26,21 @@ class Application(object):
         ap = argparse.ArgumentParser(prog=sys.argv[0])
         ap.add_argument('-l', '--list', action='store_true', help='prints available capture devices')
         ap.add_argument('-v', '--verbose', action='store_true', help='verbose')
+        ap.add_argument('--file', default=None, type=str, help='use file as input')
         ap.add_argument('-c', '--capture', default=0, type=int, help='capture device number')
         ap.add_argument('--hq', action='store_true', help='high quality (1920x1080@60)')
         ap.add_argument('--haar-cascades', default=None, type=str)
         ap.add_argument('--yolo', default=None, type=str)
         ap.add_argument('--onnx', default=None, type=str)
         ap.add_argument('--log', default='pmce.log', type=str)
+        ap.add_argument('--open-player', action='store_true', help='opens vlc with the stream')
 
         self.args = ap.parse_args(argv[1:])
         self.frame_state = None
 
         self.filter_manager = None
         self.input_thread = None
-        self.camera_input = None
+        self.input = None
         self.ui_thread = None
 
         self.yolo_detector = None
@@ -93,10 +95,15 @@ class Application(object):
             detector.set_frame_state(self.frame_state)
             self.threads.append(detector.create_thread())
 
-        self.camera_input = CameraInput(frame_state=self.frame_state, filter_manager=self.filter_manager, capture_idx=self.args.capture, open_player=True)
-        self.camera_input.detectors = self.detectors
+        open_player = self.args.open_player
 
-        self.threads.append(self.camera_input.create_thread(name="FrameProcessing"))
+        if self.args.file:
+            self.input = FileInput(frame_state=self.frame_state, filter_manager=self.filter_manager, loop=True, open_player=open_player)
+        else:
+            self.input = CameraInput(frame_state=self.frame_state, filter_manager=self.filter_manager, capture_idx=self.args.capture, open_player=open_player)
+        self.input.detectors = self.detectors
+
+        self.threads.append(self.input.create_thread(name="FrameProcessing"))
 
         # TODO: enable ui thread once there is any ui
         # self.ui_thread = UiThread()
