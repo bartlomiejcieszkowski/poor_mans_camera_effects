@@ -85,7 +85,7 @@ class Application(object):
         self.filter_manager = FilterManager()
         add_default_filters(self.filter_manager)
 
-        self.input_thread = TuiThread(self)
+        self.input_thread = TuiThread()
 
         self.threads.append(self.input_thread.create_thread())
 

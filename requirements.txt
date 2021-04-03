@@ -5,6 +5,8 @@ numpy==1.19.3 # cause 1.19.4 has a bug
 pyvirtualcam
 # for windows - requires obs
 pyfakewebcam
+py-cui
+windows-curses
 
 # for filters
 scipy
