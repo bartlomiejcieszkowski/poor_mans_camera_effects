@@ -28,6 +28,7 @@ class Application(object):
         ap.add_argument('-v', '--verbose', action='store_true', help='verbose')
         ap.add_argument('--file', default=None, type=str, help='use file as input')
         ap.add_argument('-c', '--capture', default=0, type=int, help='capture device number')
+        ap.add_argument('--capture-msmf', action='store_true', help='uses MSMF instead of DSHOW for capture')
         ap.add_argument('--hq', action='store_true', help='high quality (1920x1080@60)')
         ap.add_argument('--haar-cascades', default=None, type=str)
         ap.add_argument('--yolo', default=None, type=str)
@@ -55,8 +56,10 @@ class Application(object):
 
         log_file(self.args.log)
 
+        camera_api = cv2.CAP_MSMF if self.args.capture_msmf else cv2.CAP_DSHOW
+
         if self.args.list:
-            cameras = get_available_cameras(cv2.CAP_MSMF)
+            cameras = get_available_cameras(camera_api)
             msg("Available cameras")
             msg(cameras)
             return 0
@@ -100,7 +103,7 @@ class Application(object):
         if self.args.file:
             self.input = FileInput(frame_state=self.frame_state, filter_manager=self.filter_manager, file_path=self.args.file, loop=True, open_player=open_player)
         else:
-            self.input = CameraInput(frame_state=self.frame_state, filter_manager=self.filter_manager, capture_idx=self.args.capture, open_player=open_player)
+            self.input = CameraInput(frame_state=self.frame_state, filter_manager=self.filter_manager, capture_idx=self.args.capture, capture_api=camera_api, open_player=open_player)
         self.input.detectors = self.detectors
 
         self.threads.append(self.input.create_thread(name="FrameProcessing"))
