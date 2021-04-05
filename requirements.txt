@@ -20,4 +20,4 @@ onnxruntime
 tensorflow
 
 pyside2
-
+typing
