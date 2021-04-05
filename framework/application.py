@@ -98,7 +98,7 @@ class Application(object):
         open_player = self.args.open_player
 
         if self.args.file:
-            self.input = FileInput(frame_state=self.frame_state, filter_manager=self.filter_manager, loop=True, open_player=open_player)
+            self.input = FileInput(frame_state=self.frame_state, filter_manager=self.filter_manager, file_path=self.args.file, loop=True, open_player=open_player)
         else:
             self.input = CameraInput(frame_state=self.frame_state, filter_manager=self.filter_manager, capture_idx=self.args.capture, open_player=open_player)
         self.input.detectors = self.detectors
